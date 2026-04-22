@@ -82,7 +82,9 @@ def configure_logger(
         error_file_handler.setFormatter(formatter)
 
         logger.addHandler(error_file_handler)
-    if os.environ.get("PYROGRAM_LOG_ON", "0") == "1":
+    from backend.core.runtime_config import get_legacy_signer_runtime_config
+
+    if get_legacy_signer_runtime_config().pyrogram_log_enabled:
         pyrogram_logger = logging.getLogger("pyrogram")
         pyrogram_logger.setLevel(level)
         pyrogram_logger.addHandler(console_handler)

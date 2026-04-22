@@ -2,45 +2,32 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
 from backend.core.config import get_settings
-
-_SESSION_MODE_ENV = "TG_SESSION_MODE"
-_SESSION_MODE_FILE = "file"
-_SESSION_MODE_STRING = "string"
+from backend.core.runtime_config import get_session_runtime_config
 
 _GLOBAL_SEMAPHORE: Optional[asyncio.Semaphore] = None
 
 
 def get_session_mode() -> str:
-    mode = os.getenv(_SESSION_MODE_ENV, _SESSION_MODE_FILE).strip().lower()
-    return _SESSION_MODE_STRING if mode == _SESSION_MODE_STRING else _SESSION_MODE_FILE
+    return get_session_runtime_config().mode
 
 
 def is_string_session_mode() -> bool:
-    return get_session_mode() == _SESSION_MODE_STRING
+    return get_session_mode() == "string"
 
 
 def get_no_updates_flag() -> bool:
-    raw = os.getenv("TG_SESSION_NO_UPDATES") or os.getenv("TG_NO_UPDATES") or ""
-    raw = raw.strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    return get_session_runtime_config().no_updates
 
 
 def get_global_semaphore() -> asyncio.Semaphore:
     global _GLOBAL_SEMAPHORE
     if _GLOBAL_SEMAPHORE is None:
-        raw = (os.getenv("TG_GLOBAL_CONCURRENCY") or "1").strip()
-        try:
-            limit = int(raw)
-        except ValueError:
-            limit = 1
-        if limit < 1:
-            limit = 1
+        limit = get_session_runtime_config().global_concurrency
         _GLOBAL_SEMAPHORE = asyncio.Semaphore(limit)
     return _GLOBAL_SEMAPHORE
 

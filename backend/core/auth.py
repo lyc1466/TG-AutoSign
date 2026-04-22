@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -11,6 +10,7 @@ from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from backend.core.config import get_settings
+from backend.core.runtime_config import get_auth_runtime_config
 from backend.core.database import get_db
 from backend.core.security import verify_password
 from backend.models.user import User
@@ -37,14 +37,7 @@ def verify_totp(secret: str, code: str) -> bool:
         if not code:
             return False
         totp = pyotp.TOTP(secret)
-        raw_window = os.getenv("APP_TOTP_VALID_WINDOW")
-        raw_window = raw_window.strip() if isinstance(raw_window, str) else ""
-        try:
-            valid_window = int(raw_window) if raw_window else 1
-        except ValueError:
-            valid_window = 1
-        if valid_window < 0:
-            valid_window = 0
+        valid_window = get_auth_runtime_config().totp_valid_window
         return totp.verify(code, valid_window=valid_window)
     except Exception:
         return False

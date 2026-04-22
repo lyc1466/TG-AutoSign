@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
-import os
 import tempfile
 from pathlib import Path
 from typing import Optional
+
+from backend.core.runtime_config import get_storage_runtime_config
 
 _BASE_DIR: Optional[Path] = None
 _DATA_DIR_OVERRIDE_FILE_ENV = "APP_DATA_DIR_OVERRIDE_FILE"
@@ -38,10 +39,8 @@ def is_writable_dir(path: Path) -> bool:
 
 
 def get_data_dir_override_file() -> Path:
-    raw = (os.getenv(_DATA_DIR_OVERRIDE_FILE_ENV) or "").strip()
-    if raw:
-        return Path(raw).expanduser()
-    return _DEFAULT_DATA_DIR_OVERRIDE_FILE
+    runtime = get_storage_runtime_config()
+    return runtime.data_dir_override_file or _DEFAULT_DATA_DIR_OVERRIDE_FILE
 
 
 def load_data_dir_override() -> Optional[Path]:
@@ -72,9 +71,6 @@ def clear_data_dir_override() -> None:
 
 
 def get_initial_data_dir() -> Path:
-    env_data_dir = (os.getenv("APP_DATA_DIR") or "").strip()
-    if env_data_dir:
-        return Path(env_data_dir).expanduser()
     override = load_data_dir_override()
     if override:
         return override

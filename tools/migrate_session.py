@@ -8,6 +8,7 @@ from pathlib import Path
 from pyrogram import Client
 
 from backend.core.config import get_settings
+from backend.core.runtime_config import get_telegram_api_runtime_config
 from backend.services.config import get_config_service
 from backend.utils.tg_session import (
     save_session_string_file,
@@ -16,19 +17,8 @@ from backend.utils.tg_session import (
 
 
 def _resolve_api_credentials() -> tuple[int | None, str | None]:
-    tg_config = get_config_service().get_telegram_config()
-    api_id = os.getenv("TG_API_ID") or tg_config.get("api_id")
-    api_hash = os.getenv("TG_API_HASH") or tg_config.get("api_hash")
-
-    try:
-        api_id = int(api_id) if api_id is not None else None
-    except (TypeError, ValueError):
-        api_id = None
-
-    if isinstance(api_hash, str):
-        api_hash = api_hash.strip()
-
-    return api_id, api_hash
+    runtime = get_telegram_api_runtime_config()
+    return runtime.api_id, runtime.api_hash
 
 
 async def _export_session_string(

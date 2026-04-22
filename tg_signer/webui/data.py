@@ -1,10 +1,10 @@
 import json
-import os
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple
 
+from backend.core.runtime_config import get_legacy_signer_runtime_config
 from tg_signer.config import BaseJSONConfig, MonitorConfig, SignConfigV3
 
 ConfigKind = Literal["signer", "monitor"]
@@ -14,7 +14,7 @@ CONFIG_META: dict[ConfigKind, Tuple[str, type[BaseJSONConfig]]] = {
     "monitor": ("monitors", MonitorConfig),
 }
 
-DEFAULT_WORKDIR = Path(os.environ.get("TG_SIGNER_WORKDIR", ".signer"))
+DEFAULT_WORKDIR = get_legacy_signer_runtime_config().workdir
 LOG_DIR = Path("logs")
 DEFAULT_LOG_FILE = LOG_DIR / "tg-signer.log"
 

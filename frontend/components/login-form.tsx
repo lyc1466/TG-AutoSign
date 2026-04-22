@@ -9,6 +9,7 @@ import {
   Spinner,
   GithubLogo
 } from "@phosphor-icons/react";
+import { BRAND_NAME, BRAND_REPOSITORY_URL } from "@/lib/brand";
 import { ThemeLanguageToggle } from "./ThemeLanguageToggle";
 import { useLanguage } from "../context/LanguageContext";
 
@@ -57,7 +58,7 @@ export default function LoginForm() {
             className="inline-block"
             style={{ fontSize: '48px', color: '#fcd34d', filter: 'drop-shadow(0 0 12px rgba(252, 211, 77, 0.4))' }}
           />
-          <div className="brand-text-grad mt-1 text-xl">TG SignPulse</div>
+          <div className="brand-text-grad mt-1 text-xl">{BRAND_NAME}</div>
           <p className="text-[#9496a1] text-[11px] mt-1 leading-relaxed px-4 font-medium">{t("settings_desc")}</p>
         </div>
 
@@ -120,7 +121,7 @@ export default function LoginForm() {
         <div className="login-footer-icons !mt-6 !pt-4 border-t border-black/5 dark:border-white/5 flex items-center justify-center gap-6">
           <ThemeLanguageToggle />
           <a
-            href="https://github.com/akasls/TG-SignPulse"
+            href={BRAND_REPOSITORY_URL}
             target="_blank"
             rel="noreferrer"
             className="action-btn !w-9 !h-9 !text-xl"

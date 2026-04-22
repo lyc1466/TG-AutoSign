@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import logging
-import os
 
 from sqlalchemy.orm import Session
 
+from backend.core.runtime_config import get_auth_runtime_config
 from backend.core.security import hash_password
 from backend.models.user import User
 
@@ -22,7 +22,7 @@ def ensure_admin(db: Session, username: str = "admin", password: str = None):
         return first_user
 
     if not password:
-        env_pwd = os.getenv("ADMIN_PASSWORD")
+        env_pwd = get_auth_runtime_config().initial_admin_password
         if env_pwd:
             password = env_pwd
         else:

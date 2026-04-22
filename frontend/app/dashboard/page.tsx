@@ -36,6 +36,7 @@ import {
   PaperPlaneRight,
   Trash
 } from "@phosphor-icons/react";
+import { BRAND_NAME } from "@/lib/brand";
 import { ToastContainer, useToast } from "../../components/ui/toast";
 import { ThemeLanguageToggle } from "../../components/ThemeLanguageToggle";
 import { useLanguage } from "../../context/LanguageContext";
@@ -979,7 +980,7 @@ export default function Dashboard() {
       <nav className="navbar">
         <div className="nav-brand" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Lightning weight="fill" style={{ fontSize: '28px', color: '#fcd34d' }} />
-          <span className="nav-title font-bold tracking-tight text-lg">TG SignPulse</span>
+          <span className="nav-title font-bold tracking-tight text-lg">{BRAND_NAME}</span>
         </div>
         <div className="top-right-actions">
           <ThemeLanguageToggle />

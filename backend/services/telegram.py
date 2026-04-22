@@ -15,8 +15,9 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from backend.core.config import get_settings
+from backend.core.runtime_config import get_telegram_api_runtime_config
 from backend.utils.account_locks import get_account_lock
-from backend.utils.proxy import build_proxy_dict
+from backend.utils.proxy import resolve_proxy_dict
 from backend.utils.tg_session import (
     delete_account_session_string,
     delete_session_string_file,
@@ -212,9 +213,7 @@ class TelegramService:
         proxy_dict = None
         try:
             profile = get_account_profile(account_name) or {}
-            proxy_value = profile.get("proxy")
-            if proxy_value:
-                proxy_dict = build_proxy_dict(proxy_value)
+            proxy_dict = resolve_proxy_dict(account_proxy=profile.get("proxy"))
         except Exception:
             proxy_dict = None
 
@@ -535,34 +534,19 @@ class TelegramService:
         # 3. 强制垃圾回收，释放可能的未关闭文件句柄 (Windows 特性)
         gc.collect()
 
-        # 获取 API credentials
-        from backend.services.config import get_config_service
+        api_runtime = get_telegram_api_runtime_config()
+        api_id = api_runtime.api_id
+        api_hash = api_runtime.api_hash
 
-        config_service = get_config_service()
-        tg_config = config_service.get_telegram_config()
-        api_id = tg_config.get("api_id")
-        api_hash = tg_config.get("api_hash")
-
-        env_api_id = os.getenv("TG_API_ID") or None
-        env_api_hash = os.getenv("TG_API_HASH") or None
-        if env_api_id:
-            api_id = env_api_id
-        if env_api_hash:
-            api_hash = env_api_hash
-
-        try:
-            api_id = int(api_id) if api_id is not None else None
-        except (TypeError, ValueError):
-            api_id = None
-
-        if isinstance(api_hash, str):
-            api_hash = api_hash.strip()
-
-        if not api_id or not api_hash:
+        if not api_runtime.is_configured:
             _release_account_lock()
             raise ValueError("Telegram API ID / API Hash 未配置或无效")
 
-        proxy_dict = build_proxy_dict(proxy) if proxy else None
+        profile = get_account_profile(account_name) or {}
+        proxy_dict = resolve_proxy_dict(
+            explicit_proxy=proxy,
+            account_proxy=profile.get("proxy"),
+        )
 
         # 4. 如果是重新登录，尝试先清理旧的 session 文件 (避免 SQLite 锁或损坏)
         # 注意: 如果 session 有效但用户只是想重登，删除也没问题，因为反正要重新验证
@@ -1010,27 +994,19 @@ class TelegramService:
 
         gc.collect()
 
-        # API credentials
-        from backend.services.config import get_config_service
+        api_runtime = get_telegram_api_runtime_config()
+        api_id = api_runtime.api_id
+        api_hash = api_runtime.api_hash
 
-        config_service = get_config_service()
-        tg_config = config_service.get_telegram_config()
-        api_id = os.getenv("TG_API_ID") or tg_config.get("api_id")
-        api_hash = os.getenv("TG_API_HASH") or tg_config.get("api_hash")
-
-        try:
-            api_id = int(api_id) if api_id is not None else None
-        except (TypeError, ValueError):
-            api_id = None
-
-        if isinstance(api_hash, str):
-            api_hash = api_hash.strip()
-
-        if not api_id or not api_hash:
+        if not api_runtime.is_configured:
             _release_account_lock()
             raise ValueError("Telegram API ID / API Hash 未配置或无效")
 
-        proxy_dict = build_proxy_dict(proxy) if proxy else None
+        profile = get_account_profile(account_name) or {}
+        proxy_dict = resolve_proxy_dict(
+            explicit_proxy=proxy,
+            account_proxy=profile.get("proxy"),
+        )
 
         # 清理旧 session 文件（与手机号登录保持一致）
         if session_mode == "file":
@@ -1369,20 +1345,10 @@ class TelegramService:
                         api_hash = data.get("api_hash")
                         if not api_id or not api_hash:
                             try:
-                                from backend.services.config import get_config_service
-
-                                tg_config = get_config_service().get_telegram_config()
-                                api_id = os.getenv("TG_API_ID") or tg_config.get("api_id")
-                                api_hash = os.getenv("TG_API_HASH") or tg_config.get("api_hash")
-                                try:
-                                    api_id = int(api_id) if api_id is not None else None
-                                except (TypeError, ValueError):
-                                    api_id = None
-                                if isinstance(api_hash, str):
-                                    api_hash = api_hash.strip()
-                                if api_id and api_hash:
-                                    data["api_id"] = api_id
-                                    data["api_hash"] = api_hash
+                                api_runtime = get_telegram_api_runtime_config()
+                                if api_runtime.is_configured:
+                                    data["api_id"] = api_runtime.api_id
+                                    data["api_hash"] = api_runtime.api_hash
                             except Exception:
                                 api_id = None
                                 api_hash = None
@@ -1646,20 +1612,10 @@ class TelegramService:
                     api_hash = data.get("api_hash")
                     if not api_id or not api_hash:
                         try:
-                            from backend.services.config import get_config_service
-
-                            tg_config = get_config_service().get_telegram_config()
-                            api_id = os.getenv("TG_API_ID") or tg_config.get("api_id")
-                            api_hash = os.getenv("TG_API_HASH") or tg_config.get(
-                                "api_hash"
-                            )
-                            try:
-                                api_id = int(api_id) if api_id is not None else None
-                            except (TypeError, ValueError):
-                                api_id = None
-                            if isinstance(api_hash, str):
-                                api_hash = api_hash.strip()
-                            if api_id and api_hash:
+                            api_runtime = get_telegram_api_runtime_config()
+                            if api_runtime.is_configured:
+                                api_id = api_runtime.api_id
+                                api_hash = api_runtime.api_hash
                                 data["api_id"] = api_id
                                 data["api_hash"] = api_hash
                         except Exception:

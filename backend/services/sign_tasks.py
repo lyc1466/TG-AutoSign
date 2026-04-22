@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import time
 import traceback
 from datetime import datetime
@@ -16,8 +15,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.core.config import get_settings
+from backend.core.runtime_config import (
+    get_sign_task_runtime_config,
+    get_telegram_api_runtime_config,
+)
 from backend.utils.account_locks import get_account_lock
-from backend.utils.proxy import build_proxy_dict
+from backend.utils.proxy import resolve_proxy_dict
 from backend.utils.tg_session import (
     get_account_proxy,
     get_account_session_string,
@@ -78,20 +81,11 @@ class BackendUserSigner(UserSigner):
 class SignTaskService:
     """签到任务服务类"""
 
-    @staticmethod
-    def _read_positive_int_env(name: str, default: int, minimum: int = 1) -> int:
-        raw = os.getenv(name)
-        if raw is None:
-            return default
-        try:
-            return max(int(raw), minimum)
-        except (TypeError, ValueError):
-            return default
-
     def __init__(self):
         from backend.core.config import get_settings
 
         settings = get_settings()
+        runtime_config = get_sign_task_runtime_config()
         self.workdir = settings.resolve_workdir()
         self.signs_dir = self.workdir / "signs"
         self.run_history_dir = self.workdir / "history"
@@ -106,18 +100,10 @@ class SignTaskService:
         self._tasks_cache = None  # 内存缓存
         self._account_locks: Dict[str, asyncio.Lock] = {}  # 账号锁
         self._account_last_run_end: Dict[str, float] = {}  # 账号最后一次结束时间
-        self._account_cooldown_seconds = int(
-            os.getenv("SIGN_TASK_ACCOUNT_COOLDOWN", "5")
-        )
-        self._history_max_entries = self._read_positive_int_env(
-            "SIGN_TASK_HISTORY_MAX_ENTRIES", 100, 10
-        )
-        self._history_max_flow_lines = self._read_positive_int_env(
-            "SIGN_TASK_HISTORY_MAX_FLOW_LINES", 200, 20
-        )
-        self._history_max_line_chars = self._read_positive_int_env(
-            "SIGN_TASK_HISTORY_MAX_LINE_CHARS", 500, 80
-        )
+        self._account_cooldown_seconds = runtime_config.account_cooldown_seconds
+        self._history_max_entries = runtime_config.history_max_entries
+        self._history_max_flow_lines = runtime_config.history_max_flow_lines
+        self._history_max_line_chars = runtime_config.history_max_line_chars
         self._cleanup_old_logs()
 
     @staticmethod
@@ -1057,27 +1043,15 @@ class SignTaskService:
                 else:
                     raise ValueError(f"账号 {account_name} 登录已失效，请重新登录")
 
-        config_service = get_config_service()
-        tg_config = config_service.get_telegram_config()
-        api_id = os.getenv("TG_API_ID") or tg_config.get("api_id")
-        api_hash = os.getenv("TG_API_HASH") or tg_config.get("api_hash")
+        api_runtime = get_telegram_api_runtime_config()
+        api_id = api_runtime.api_id
+        api_hash = api_runtime.api_hash
 
-        try:
-            api_id = int(api_id) if api_id is not None else None
-        except (TypeError, ValueError):
-            api_id = None
-
-        if isinstance(api_hash, str):
-            api_hash = api_hash.strip()
-
-        if not api_id or not api_hash:
+        if not api_runtime.is_configured:
             raise ValueError("未配置 Telegram API ID 或 API Hash")
 
         # 使用 get_client 获取（可能共享的）客户端实例
-        proxy_dict = None
-        proxy_value = get_account_proxy(account_name)
-        if proxy_value:
-            proxy_dict = build_proxy_dict(proxy_value)
+        proxy_dict = resolve_proxy_dict(account_proxy=get_account_proxy(account_name))
         client_kwargs = {
             "name": account_name,
             "workdir": session_dir,
@@ -1285,30 +1259,20 @@ class SignTaskService:
                 # 配置 API 凭据
                 from backend.services.config import get_config_service
 
-                config_service = get_config_service()
-                tg_config = config_service.get_telegram_config()
-                api_id = os.getenv("TG_API_ID") or tg_config.get("api_id")
-                api_hash = os.getenv("TG_API_HASH") or tg_config.get("api_hash")
+                api_runtime = get_telegram_api_runtime_config()
+                api_id = api_runtime.api_id
+                api_hash = api_runtime.api_hash
 
-                try:
-                    api_id = int(api_id) if api_id is not None else None
-                except (TypeError, ValueError):
-                    api_id = None
-
-                if isinstance(api_hash, str):
-                    api_hash = api_hash.strip()
-
-                if not api_id or not api_hash:
+                if not api_runtime.is_configured:
                     raise ValueError("未配置 Telegram API ID 或 API Hash")
 
                 session_dir = settings.resolve_session_dir()
                 session_mode = get_session_mode()
                 session_string = None
                 use_in_memory = False
-                proxy_dict = None
-                proxy_value = get_account_proxy(account_name)
-                if proxy_value:
-                    proxy_dict = build_proxy_dict(proxy_value)
+                proxy_dict = resolve_proxy_dict(
+                    account_proxy=get_account_proxy(account_name)
+                )
 
                 if session_mode == "string":
                     session_string = (
@@ -1322,7 +1286,7 @@ class SignTaskService:
                     session_string = None
                     use_in_memory = False
 
-                    if os.getenv("SIGN_TASK_FORCE_IN_MEMORY") == "1":
+                    if get_sign_task_runtime_config().force_in_memory:
                         session_string = load_session_string_file(
                             session_dir, account_name
                         )

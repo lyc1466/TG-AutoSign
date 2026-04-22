@@ -127,7 +127,7 @@ DICE_EMOJIS = ("🎲", "🎯", "🏀", "⚽", "🎳", "🎰")
 
 Session.START_TIMEOUT = 5  # 原始超时时间为2秒，但一些代理访问会超时，所以这里调大一点
 
-OPENAI_USE_PROMPT = "当前任务需要配置大模型，请确保运行前正确设置`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`等环境变量，或通过`tg-signer llm-config`持久化配置。"
+OPENAI_USE_PROMPT = "当前任务需要配置大模型，请先在面板中保存 AI 配置，或通过`tg-signer llm-config`持久化配置。"
 
 
 def readable_message(message: Message):
@@ -285,22 +285,10 @@ class Client(BaseClient):
 
 
 def get_api_config():
-    api_id_env = os.environ.get("TG_API_ID")
-    api_hash_env = os.environ.get("TG_API_HASH")
+    from backend.core.runtime_config import get_telegram_api_runtime_config
 
-    api_id = 611335
-    if api_id_env:
-        try:
-            api_id = int(api_id_env)
-        except (TypeError, ValueError):
-            pass
-
-    if isinstance(api_hash_env, str) and api_hash_env.strip():
-        api_hash = api_hash_env.strip()
-    else:
-        api_hash = "d524b414d21f4d37f08684c1df41ac9c"
-
-    return api_id, api_hash
+    runtime = get_telegram_api_runtime_config()
+    return runtime.api_id or 611335, runtime.api_hash or "d524b414d21f4d37f08684c1df41ac9c"
 
 
 # 默认设备信息，防止 Docker 容器中 platform.node() 泄露随机容器名
@@ -323,16 +311,22 @@ def get_client_device_kwargs() -> dict:
     始终返回完整的设备信息字典，未设置环境变量时使用内置默认值，
     避免 Docker 环境下 Pyrogram 使用随机容器名作为 device_model。
     """
+    from backend.core.runtime_config import get_tg_client_device_runtime_config
+
+    runtime = get_tg_client_device_runtime_config()
     return {
-        "device_model": os.environ.get("TG_DEVICE_MODEL") or _DEFAULT_DEVICE_MODEL,
-        "system_version": os.environ.get("TG_SYSTEM_VERSION") or _DEFAULT_SYSTEM_VERSION,
-        "app_version": os.environ.get("TG_APP_VERSION") or _DEFAULT_APP_VERSION,
-        "lang_code": os.environ.get("TG_LANG_CODE") or _DEFAULT_LANG_CODE,
+        "device_model": runtime.device_model or _DEFAULT_DEVICE_MODEL,
+        "system_version": runtime.system_version or _DEFAULT_SYSTEM_VERSION,
+        "app_version": runtime.app_version or _DEFAULT_APP_VERSION,
+        "lang_code": runtime.lang_code or _DEFAULT_LANG_CODE,
     }
 
 
 def get_proxy(proxy: str = None):
-    proxy = proxy or os.environ.get("TG_PROXY")
+    from backend.core.runtime_config import get_proxy_runtime_config
+
+    runtime = get_proxy_runtime_config()
+    proxy = proxy or runtime.global_proxy
     if proxy:
         r = parse.urlparse(proxy)
         return {
@@ -1840,9 +1834,13 @@ class UserMonitor(BaseUserWorker[MonitorConfig]):
                     )
 
                 if match_cfg.push_via_server_chan:
+                    from backend.core.runtime_config import (
+                        get_legacy_signer_runtime_config,
+                    )
+
                     server_chan_send_key = (
                         match_cfg.server_chan_send_key
-                        or os.environ.get("SERVER_CHAN_SEND_KEY")
+                        or get_legacy_signer_runtime_config().server_chan_send_key
                     )
                     if not server_chan_send_key:
                         self.log("未配置Server酱的SendKey", level="WARNING")

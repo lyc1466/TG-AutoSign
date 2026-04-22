@@ -660,7 +660,9 @@ def build_ui(auth_code: str = None) -> None:
         root.clear()
         _build_dashboard(root)
 
-    auth_code = auth_code or (os.environ.get(AUTH_CODE_ENV) or "").strip()
+    from backend.core.runtime_config import get_legacy_signer_runtime_config
+
+    auth_code = auth_code or (get_legacy_signer_runtime_config().gui_auth_code or "").strip()
     if not auth_code:
         render_dashboard()
         return

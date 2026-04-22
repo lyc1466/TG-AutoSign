@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Optional
 from urllib.parse import urlparse
 
+from backend.core.runtime_config import get_proxy_runtime_config
+
 
 def normalize_proxy_url(raw: str) -> str:
     value = raw.strip()
@@ -39,3 +41,28 @@ def build_proxy_dict(raw: str) -> Optional[dict]:
     if parsed.password:
         proxy["password"] = parsed.password
     return proxy
+
+
+def resolve_proxy_url(
+    *, explicit_proxy: Optional[str] = None, account_proxy: Optional[str] = None
+) -> Optional[str]:
+    runtime = get_proxy_runtime_config()
+    for candidate in (explicit_proxy, account_proxy, runtime.global_proxy):
+        if not isinstance(candidate, str):
+            continue
+        value = candidate.strip()
+        if value:
+            return value
+    return None
+
+
+def resolve_proxy_dict(
+    *, explicit_proxy: Optional[str] = None, account_proxy: Optional[str] = None
+) -> Optional[dict]:
+    value = resolve_proxy_url(
+        explicit_proxy=explicit_proxy,
+        account_proxy=account_proxy,
+    )
+    if not value:
+        return None
+    return build_proxy_dict(value)

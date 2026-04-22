@@ -4,7 +4,7 @@
 
 TG-AutoSign is a Telegram automation project with a web management panel. It supports multi-account management, auto sign-in workflows, message and button actions, AI-assisted tasks, execution logs, and Docker-based deployment.
 
-> This repository continues maintenance on top of earlier projects and adds panelization, containerization, unified client device parameters, and deployment guidance.
+> This repository continues maintenance on top of earlier projects, and the current maintained version has been developed and organized end-to-end with GitHub Copilot, including panelization, containerization, unified client device parameters, and deployment guidance.
 
 ## Capabilities
 
@@ -50,31 +50,29 @@ Then visit: `http://YOUR_SERVER_IP:8080`
 
 ### Method 2: Start with Docker Compose
 
-You can also write your own `docker-compose.yml`, for example:
+The repository already provides two Compose files:
 
-```yaml
-services:
-  app:
-    image: ghcr.io/lyc1466/tg-autosign:latest
-    container_name: tg-autosign
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./data:/data
-    environment:
-      - PORT=8080
-      - APP_DATA_DIR=/data
-      - TZ=Asia/Shanghai
-      - APP_SECRET_KEY=your_secret_key
-      - ADMIN_PASSWORD=change_me
-```
+- `docker-compose.yml`: a concise version with only the most common deployment settings
+- `docker-compose.full.yml`: a fully commented version that lists all runtime settings still managed by environment variables
 
-After saving the file, run:
+Use the concise version:
 
 ```bash
 docker compose up -d
 ```
+
+Use the full commented version:
+
+```bash
+docker compose -f docker-compose.full.yml up -d
+```
+
+Notes:
+
+- At minimum, change `APP_SECRET_KEY`, and usually `ADMIN_PASSWORD` as well
+- Telegram API, AI settings, and the data directory are now managed from `UI -> System Settings`, so they are intentionally omitted from Compose env
+- Use `docker-compose.yml` when you want the fastest deployment path
+- Use `docker-compose.full.yml` when you need proxy settings, device overrides, task tuning, or the optional hardening block
 
 Then visit: `http://YOUR_SERVER_IP:8080`
 
@@ -147,6 +145,24 @@ docker/       Container entry scripts
 tools/        Helper scripts
 ```
 
+## Unified Configuration Priority
+
+Runtime configuration is now routed through a unified layer. When deploying, read precedence in this order:
+
+1. Container or process environment variables are the highest priority for most runtime settings.
+2. Files written by the panel inside the work directory only apply to a small set of persistent settings.
+3. Built-in defaults are used only when neither env nor persisted settings provide a value.
+
+Key rules:
+
+- Telegram API credentials are now read from `.telegram_api.json`; if the UI has never stored them, runtime falls back to built-in default credentials.
+- AI configuration is now read from `.openai_config.json`; if the UI has not stored it, AI is treated as disabled.
+- The effective data directory now comes from the override file pointed to by `APP_DATA_DIR_OVERRIDE_FILE`; when unset, the default remains `/data`.
+- Per-request or per-login explicit proxy > account proxy > `TG_PROXY`.
+- `TG_SESSION_NO_UPDATES` > `TG_NO_UPDATES` (compatibility alias).
+- Base runtime knobs such as `APP_*`, `SIGN_TASK_*`, `TG_DEVICE_*`, and `TG_SIGNER_*` are mainly env-driven and are not overridden back from the panel.
+- `NEXT_PUBLIC_API_BASE` is a frontend build-time variable; changing it requires rebuilding frontend assets or the image.
+
 ## Full Environment Variables
 
 The table below follows `.env.example`.
@@ -156,12 +172,10 @@ The table below follows `.env.example`.
 | Variable | Default / Example | Description |
 |---|---|---|
 | `APP_HOST` | `127.0.0.1` | API bind address; use `0.0.0.0` for direct exposure or reverse proxy setups |
-| `APP_PORT` | `3000` (example) | Port for panel-mode example |
 | `PORT` | `8080` | Backend container port |
 | `TZ` | `Asia/Shanghai` | Container timezone |
 | `APP_TIMEZONE` | `Asia/Shanghai` (optional) | Panel scheduler timezone; defaults to `TZ` |
-| `APP_DATA_DIR` | `/data` | Data directory |
-| `APP_DATA_DIR_OVERRIDE_FILE` | `.tg_signpulse_data_dir` | Override file path for the data directory |
+| `APP_DATA_DIR_OVERRIDE_FILE` | `.tg_signpulse_data_dir` | Advanced option that chooses where the UI-saved data-directory override file is stored |
 | `APP_DB_PATH` | `/data/db.sqlite` | SQLite database file path |
 | `APP_SIGNER_WORKDIR` | `/data/.signer` | Task work directory |
 | `APP_SESSION_DIR` | `/data/sessions` | Telegram session directory |
@@ -179,10 +193,10 @@ The table below follows `.env.example`.
 
 ### Telegram / Pyrogram
 
+Telegram API credentials are now managed from `System Settings -> Telegram API Configuration` and are no longer overridden from environment variables.
+
 | Variable | Default / Example | Description |
 |---|---|---|
-| `TG_API_ID` | `123456` (example) | Telegram API ID |
-| `TG_API_HASH` | `your_api_hash_here` | Telegram API hash |
 | `TG_PROXY` | `socks5://127.0.0.1:1080` | Shared proxy URL |
 | `TG_DEVICE_MODEL` | `Samsung Galaxy S24` | Custom device model |
 | `TG_SYSTEM_VERSION` | `SDK 35` | Custom system version |
@@ -205,11 +219,7 @@ The table below follows `.env.example`.
 
 ### AI
 
-| Variable | Default / Example | Description |
-|---|---|---|
-| `OPENAI_API_KEY` | `sk-...` | Required to enable AI features |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible endpoint |
-| `OPENAI_MODEL` | `gpt-4o` | Default AI model |
+AI settings are now managed from `System Settings -> AI Configuration`; CLI workflows can persist the same file through `tg-signer llm-config`.
 
 ### Frontend Build
 
@@ -235,10 +245,15 @@ The table below follows `.env.example`.
 
 ## Custom Data Directory
 
-You can set the data directory in two ways:
+The data directory is now managed from the UI:
 
 1. Panel: `System Settings -> Global Settings -> Data Directory`
-2. Environment variable: `APP_DATA_DIR=/your/path`
+2. In advanced setups, `APP_DATA_DIR_OVERRIDE_FILE` only changes where that UI-managed override is stored
+
+Notes:
+
+- The panel stores its value through the data-directory override file.
+- If the UI has never stored a value, the runtime default remains `/data`.
 
 Recommendations:
 

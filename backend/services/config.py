@@ -465,15 +465,33 @@ class ConfigService:
             配置字典，如果不存在则返回 None
         """
         config_file = self._get_ai_config_file()
+        config: Dict[str, Any] = {}
 
         if not config_file.exists():
             return None
 
         try:
             with open(config_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                config = loaded
         except (json.JSONDecodeError, OSError):
+            config = {}
+
+        api_key = config.get("api_key")
+        if not isinstance(api_key, str) or not api_key.strip():
             return None
+
+        config["api_key"] = api_key.strip()
+        base_url = config.get("base_url")
+        config["base_url"] = (
+            base_url.strip() if isinstance(base_url, str) and base_url.strip() else None
+        )
+        model = config.get("model")
+        config["model"] = (
+            model.strip() if isinstance(model, str) and model.strip() else None
+        )
+        return config
 
     def save_ai_config(
         self,
@@ -673,20 +691,29 @@ class ConfigService:
             "is_custom": False,
         }
 
-        if not config_file.exists():
-            return default_config
+        config = dict(default_config)
 
-        try:
-            with open(config_file, "r", encoding="utf-8") as f:
-                config = json.load(f)
-                # 如果有自定义配置，标记为自定义
-                if config.get("api_id") and config.get("api_hash"):
-                    config["is_custom"] = True
-                    return config
-                else:
-                    return default_config
-        except (json.JSONDecodeError, OSError):
-            return default_config
+        if config_file.exists():
+            try:
+                with open(config_file, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    if loaded.get("api_id"):
+                        config["api_id"] = str(loaded.get("api_id")).strip()
+                    if loaded.get("api_hash"):
+                        config["api_hash"] = str(loaded.get("api_hash")).strip()
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        config["is_custom"] = bool(
+            config.get("api_id")
+            and config.get("api_hash")
+            and (
+                config["api_id"] != self.DEFAULT_TG_API_ID
+                or config["api_hash"] != self.DEFAULT_TG_API_HASH
+            )
+        )
+        return config
 
     def save_telegram_config(self, api_id: str, api_hash: str) -> bool:
         """

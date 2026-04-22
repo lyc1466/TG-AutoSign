@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { BRAND_DATA_DIR_EXAMPLE } from '@/lib/brand';
 
 type Language = 'zh' | 'en';
 
@@ -306,7 +307,7 @@ const translations: Translations = {
         "api_key_keep_hint": "留空表示保持当前 API 密钥不变",
         "sign_interval_placeholder": "留空则随机 1-120 秒",
         "data_dir": "数据目录",
-        "data_dir_placeholder": "例如: /opt/tg-signpulse-data",
+        "data_dir_placeholder": `例如: ${BRAND_DATA_DIR_EXAMPLE}`,
         "data_dir_desc": "用于保存 sessions、logs、数据库和任务数据",
         "data_dir_restart_hint": "修改后需重启后端服务生效",
         "tg_api_id_placeholder": "来自 my.telegram.org",
@@ -608,7 +609,7 @@ const translations: Translations = {
         "api_key_keep_hint": "Leave empty to keep the current API key",
         "sign_interval_placeholder": "Leave blank for random 1-120 seconds",
         "data_dir": "Data Directory",
-        "data_dir_placeholder": "e.g. /opt/tg-signpulse-data",
+        "data_dir_placeholder": `e.g. ${BRAND_DATA_DIR_EXAMPLE}`,
         "data_dir_desc": "Used for sessions, logs, database, and task files",
         "data_dir_restart_hint": "Restart backend service to apply changes",
         "tg_api_id_placeholder": "From my.telegram.org",

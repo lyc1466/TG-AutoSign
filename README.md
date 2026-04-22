@@ -4,7 +4,7 @@
 
 TG-AutoSign 是一个面向 Telegram 自动化任务的管理面板与运行时项目。它支持多账号管理、自动签到、消息发送、按钮点击、日志可视化，以及 AI 能力接入，适合在本地环境、VPS 或 Docker 容器中长期运行。
 
-> 当前仓库在原有项目基础上继续维护，并补充了面板化、容器化、设备参数统一化与部署说明。
+> 当前仓库在原有项目基础上继续维护，全程由 GitHub Copilot 开发与整理，并补充了面板化、容器化、设备参数统一化与部署说明。
 
 ## 项目能力
 
@@ -50,31 +50,29 @@ docker run -d \
 
 ### 方式二：通过 Docker Compose 启动
 
-你也可以自己写一个 `docker-compose.yml`，例如：
+仓库内已经提供两份 Compose 文件：
 
-```yaml
-services:
-  app:
-    image: ghcr.io/lyc1466/tg-autosign:latest
-    container_name: tg-autosign
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./data:/data
-    environment:
-      - PORT=8080
-      - APP_DATA_DIR=/data
-      - TZ=Asia/Shanghai
-      - APP_SECRET_KEY=your_secret_key
-      - ADMIN_PASSWORD=change_me
-```
+- `docker-compose.yml`：简洁版，只保留最常用的基础部署项，适合直接启动
+- `docker-compose.full.yml`：全量注释版，按当前配置体系补全所有仍然使用环境变量的运行项，适合二次定制
 
-保存后执行：
+使用简洁版：
 
 ```bash
 docker compose up -d
 ```
+
+使用全量注释版：
+
+```bash
+docker compose -f docker-compose.full.yml up -d
+```
+
+补充说明：
+
+- 至少要修改 `APP_SECRET_KEY`，建议同时修改 `ADMIN_PASSWORD`
+- Telegram API、AI 配置、数据目录现在统一在 `UI -> 系统设置` 中维护，所以 Compose 里故意不再写这些项
+- 如果你只想快速上线，优先使用 `docker-compose.yml`
+- 如果你需要共享代理、设备参数、任务调度细项或安全加固配置，再改 `docker-compose.full.yml`
 
 启动后访问：`http://你的服务器IP:8080`
 
@@ -147,6 +145,24 @@ docker/       容器入口脚本
 tools/        辅助工具脚本
 ```
 
+## 统一后的配置优先级
+
+当前版本已经把运行时配置收口到统一入口。部署时请按下面的顺序理解“谁覆盖谁”：
+
+1. 容器或进程环境变量，是大多数运行时配置的最高优先级。
+2. 面板写入工作目录的配置文件，只对少数可持久化配置生效。
+3. 环境变量和持久化配置都没有时，才回退到代码默认值。
+
+重点规则：
+
+- Telegram API 凭证统一从 `.telegram_api.json` 读取；未在 UI 中设置时回退到项目内置默认凭证。
+- AI 配置统一从 `.openai_config.json` 读取；如果 UI 未配置，AI 功能视为未启用。
+- 数据目录最终取 `APP_DATA_DIR_OVERRIDE_FILE` 指向的覆盖文件内容；未设置时默认 `/data`。
+- 单次任务或登录显式传入的代理 > 账号代理 > `TG_PROXY`。
+- `TG_SESSION_NO_UPDATES` > `TG_NO_UPDATES`（兼容别名）。
+- `APP_*`、`SIGN_TASK_*`、`TG_DEVICE_*`、`TG_SIGNER_*` 这类基础运行时参数主要只读环境变量，面板不会反向覆盖。
+- `NEXT_PUBLIC_API_BASE` 是前端构建期变量，修改后需要重新构建前端资源或镜像。
+
 ## 全部环境变量
 
 以下内容与 `.env.example` 保持一致，建议部署时按需配置。
@@ -156,12 +172,10 @@ tools/        辅助工具脚本
 | 变量 | 默认值 / 示例 | 说明 |
 |---|---|---|
 | `APP_HOST` | `127.0.0.1` | API 监听地址；反向代理或容器直连时可改为 `0.0.0.0` |
-| `APP_PORT` | `3000`（示例） | 面板模式端口，仅 panel 示例常用 |
 | `PORT` | `8080` | 后端容器监听端口 |
 | `TZ` | `Asia/Shanghai` | 容器时区 |
 | `APP_TIMEZONE` | `Asia/Shanghai`（可选） | 面板调度时区，默认继承 `TZ` |
-| `APP_DATA_DIR` | `/data` | 数据目录 |
-| `APP_DATA_DIR_OVERRIDE_FILE` | `.tg_signpulse_data_dir` | 数据目录覆盖文件路径，高级选项 |
+| `APP_DATA_DIR_OVERRIDE_FILE` | `.tg_signpulse_data_dir` | 数据目录覆盖文件路径，高级选项；用于指定 UI 数据目录配置保存在哪个文件 |
 | `APP_DB_PATH` | `/data/db.sqlite` | SQLite 数据库文件路径，高级选项 |
 | `APP_SIGNER_WORKDIR` | `/data/.signer` | 签到任务工作目录，高级选项 |
 | `APP_SESSION_DIR` | `/data/sessions` | Telegram session 存储目录，高级选项 |
@@ -179,10 +193,10 @@ tools/        辅助工具脚本
 
 ### Telegram / Pyrogram
 
+Telegram API 凭证现统一在 `系统设置 -> Telegram API 配置` 中维护，不再通过环境变量覆盖运行时配置。
+
 | 变量 | 默认值 / 示例 | 说明 |
 |---|---|---|
-| `TG_API_ID` | `123456`（示例） | Telegram API ID |
-| `TG_API_HASH` | `your_api_hash_here` | Telegram API Hash |
 | `TG_PROXY` | `socks5://127.0.0.1:1080` | 共享代理地址 |
 | `TG_DEVICE_MODEL` | `Samsung Galaxy S24` | 自定义设备型号 |
 | `TG_SYSTEM_VERSION` | `SDK 35` | 自定义系统版本 |
@@ -205,11 +219,7 @@ tools/        辅助工具脚本
 
 ### AI 配置
 
-| 变量 | 默认值 / 示例 | 说明 |
-|---|---|---|
-| `OPENAI_API_KEY` | `sk-...` | 启用 AI 功能所需 |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI 兼容接口地址 |
-| `OPENAI_MODEL` | `gpt-4o` | 默认模型 |
+AI 配置现统一在 `系统设置 -> AI 配置` 中维护；CLI 场景可通过 `tg-signer llm-config` 写入同一份持久化配置文件。
 
 ### 前端构建变量
 
@@ -235,10 +245,15 @@ tools/        辅助工具脚本
 
 ## 自定义数据目录
 
-可通过两种方式设置：
+当前数据目录由 UI 管理：
 
 1. 面板设置：`系统设置 -> 全局设置 -> 数据目录`
-2. 环境变量：`APP_DATA_DIR=/your/path`
+2. 高级场景可用 `APP_DATA_DIR_OVERRIDE_FILE` 改变这份 UI 配置保存到哪个文件
+
+补充说明：
+
+- 面板设置实际会写入数据目录覆盖文件。
+- 如果从未在 UI 中设置过，运行时默认数据目录仍是 `/data`。
 
 建议：
 

@@ -1,42 +1,35 @@
-version: '3.8'
+version: "3.9"
 
 services:
   app:
-    build: .
-    image: tg-autosign:latest
+    # 默认直接使用已构建镜像；如果你想本地构建，可注释 image 并取消下一行
+    image: ghcr.io/lyc1466/tg-autosign:latest
+    # build: .
     container_name: tg-autosign
+    restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
+      # 所有运行数据都会写到这里，包括数据库、sessions、日志等
       - ./data:/data
     environment:
+      # ===== 基础运行项 =====
+      - APP_HOST=0.0.0.0
       - PORT=8080
-      - APP_DATA_DIR=/data
       - TZ=Asia/Shanghai
-      # Telegram API 凭据（可选，有内置默认值）
-      # - TG_API_ID=your_api_id
-      # - TG_API_HASH=your_api_hash
-      # 共享代理（可选，客户端统一读取；账号单独设置代理时会覆盖）
-      # - TG_PROXY=socks5://ip:port
-      # 自定义设备信息（可选，已有内置默认值：Samsung Galaxy S24 / SDK 35 / 11.4.2）
-      # 注意：应用名称由 API ID 决定，非此处控制
+
+      # ===== 必改安全项 =====
+      - APP_SECRET_KEY=replace_with_a_random_secret
+      - ADMIN_PASSWORD=change_me
+
+      # ===== 常用可选项 =====
+      # 共享代理；账号单独代理会覆盖这里
+      # - TG_PROXY=socks5://127.0.0.1:1080
+
+      # 统一客户端设备参数
       # - TG_DEVICE_MODEL=Samsung Galaxy S24
       # - TG_SYSTEM_VERSION=SDK 35
       # - TG_APP_VERSION=11.4.2
       # - TG_LANG_CODE=zh
-      
-    init: true
-    read_only: true
-    tmpfs:
-      - /tmp
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    stop_grace_period: 30s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    restart: unless-stopped
+
+      # Telegram API、AI 配置、数据目录统一在 UI -> 系统设置 中维护

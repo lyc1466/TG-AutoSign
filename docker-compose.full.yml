@@ -1,0 +1,148 @@
+version: "3.9"
+
+services:
+  app:
+    # ===== 镜像来源 =====
+    # 默认使用 GHCR 镜像；如果你要本地构建，注释 image 并取消 build
+    image: ghcr.io/lyc1466/tg-autosign:latest
+    # build: .
+
+    container_name: tg-autosign
+    restart: unless-stopped
+
+    # ===== 端口映射 =====
+    # 左边是宿主机端口，右边是容器内 PORT
+    ports:
+      - "8080:8080"
+
+    # ===== 数据卷 =====
+    # 数据库、sessions、日志、导入导出配置等都会写入 ./data
+    volumes:
+      - ./data:/data
+
+    environment:
+      # ===== 运行环境 =====
+      - APP_HOST=0.0.0.0
+      - PORT=8080
+      - TZ=Asia/Shanghai
+      # 面板调度时区，默认继承 TZ
+      # - APP_TIMEZONE=Asia/Shanghai
+
+      # 数据目录默认使用 /data；如需修改请在 UI -> 系统设置 -> 数据目录 中设置
+      # 这里只能改“UI 保存的数据目录配置写到哪个文件”
+      # - APP_DATA_DIR_OVERRIDE_FILE=.tg_signpulse_data_dir
+
+      # SQLite 数据库文件路径，高级选项
+      # - APP_DB_PATH=/data/db.sqlite
+
+      # 签到任务工作目录，高级选项
+      # - APP_SIGNER_WORKDIR=/data/.signer
+
+      # Telegram session 存储目录，高级选项
+      # - APP_SESSION_DIR=/data/sessions
+
+      # 应用日志目录，高级选项
+      # - APP_LOGS_DIR=/data/logs
+
+      # ===== 安全与登录 =====
+      # 面板应用名称
+      # - APP_APP_NAME=tg-signer-panel
+
+      # 必填，至少改成随机长字符串
+      - APP_SECRET_KEY=your_secret_key_here
+
+      # 登录令牌有效期（小时）
+      # - APP_ACCESS_TOKEN_EXPIRE_HOURS=12
+
+      # 初始管理员密码，可选；不填时默认 admin123
+      - ADMIN_PASSWORD=change_me
+
+      # 2FA TOTP 时间窗口容差
+      # - APP_TOTP_VALID_WINDOW=1
+
+      # ===== Telegram / Pyrogram =====
+      # Telegram API 凭证统一在 UI -> 系统设置 -> Telegram API 配置 中设置
+      # 这里故意不再提供 TG_API_ID / TG_API_HASH
+
+      # 共享代理地址，例如 socks5://127.0.0.1:1080
+      # - TG_PROXY=socks5://127.0.0.1:1080
+
+      # 自定义设备型号，默认 Samsung Galaxy S24
+      # - TG_DEVICE_MODEL=Samsung Galaxy S24
+
+      # 自定义系统版本，默认 SDK 35
+      # - TG_SYSTEM_VERSION=SDK 35
+
+      # 自定义客户端版本，默认 11.4.2
+      # - TG_APP_VERSION=11.4.2
+
+      # 语言代码，默认 zh
+      # - TG_LANG_CODE=zh
+
+      # Session 存储模式：file 或 string
+      # - TG_SESSION_MODE=file
+
+      # 关闭更新接收；TG_NO_UPDATES 为兼容别名
+      # - TG_SESSION_NO_UPDATES=0
+      # - TG_NO_UPDATES=0
+
+      # 全局并发数
+      # - TG_GLOBAL_CONCURRENCY=1
+
+      # ===== 签到 / 任务调度 =====
+      # 同账号任务冷却秒数
+      # - SIGN_TASK_ACCOUNT_COOLDOWN=5
+
+      # 1 表示强制内存模式
+      # - SIGN_TASK_FORCE_IN_MEMORY=0
+
+      # 单任务历史条数上限
+      # - SIGN_TASK_HISTORY_MAX_ENTRIES=100
+
+      # 单次日志流保留行数上限
+      # - SIGN_TASK_HISTORY_MAX_FLOW_LINES=200
+
+      # 单行日志字符上限
+      # - SIGN_TASK_HISTORY_MAX_LINE_CHARS=500
+
+      # ===== AI 配置 =====
+      # AI 配置统一在 UI -> 系统设置 -> AI 配置 中设置
+      # CLI 场景可通过 tg-signer llm-config 写入同一份持久化配置
+
+      # ===== 前端构建变量 =====
+      # 仅在你本地 build 前端或本地 build 镜像时才有意义
+      # 前端请求 API 的基础路径，默认 /api
+      # - NEXT_PUBLIC_API_BASE=/api
+
+      # ===== 面板 / CLI 辅助变量 =====
+      # CLI 工作目录
+      # - TG_SIGNER_WORKDIR=.signer
+      # 当前账号名
+      # - TG_ACCOUNT=my_account
+      # 字符串会话
+      # - TG_SESSION_STRING=...
+      # GUI 授权码
+      # - TG_SIGNER_GUI_AUTHCODE=...
+      # Server酱推送密钥
+      # - SERVER_CHAN_SEND_KEY=...
+
+      # ===== 日志 =====
+      # 1 表示开启 Pyrogram 日志
+      # - PYROGRAM_LOG_ON=0
+
+    # ===== 可选安全加固 =====
+    # 下面这组设置更适合长期运行场景；如果你要排查问题，可临时删掉
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

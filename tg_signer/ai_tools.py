@@ -1,6 +1,5 @@
 import base64
 import json
-import os
 import pathlib
 from typing import TYPE_CHECKING, Union
 
@@ -32,11 +31,8 @@ class OpenAIConfigManager:
     def get_config_file(self) -> pathlib.Path:
         return self.workdir / ".openai_config.json"
 
-    def has_env_config(self):
-        return bool(os.environ.get("OPENAI_API_KEY"))
-
     def has_config(self) -> bool:
-        return self.has_env_config() and bool(self.load_file_config())
+        return bool(self.load_file_config())
 
     def load_file_config(self) -> Optional[dict]:
         config_file = self.get_config_file()
@@ -55,13 +51,6 @@ class OpenAIConfigManager:
             json.dump(config, fp, ensure_ascii=False, indent=2)
 
     def load_config(self) -> Optional[OpenAIConfig]:
-        # 环境变量优先
-        if self.has_env_config():
-            return OpenAIConfig(
-                api_key=os.environ["OPENAI_API_KEY"],
-                base_url=os.environ.get("OPENAI_BASE_URL"),
-                model=os.environ.get("OPENAI_MODEL", DEFAULT_MODEL),
-            )
         return self.load_file_config()
 
     def ask_for_config(self):

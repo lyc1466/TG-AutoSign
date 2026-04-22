@@ -45,6 +45,10 @@ import {
     Terminal,
     GithubLogo
 } from "@phosphor-icons/react";
+import {
+    BRAND_EXPORT_FILENAME,
+    BRAND_REPOSITORY_URL,
+} from "@/lib/brand";
 import { ToastContainer, useToast } from "../../../components/ui/toast";
 import { ThemeLanguageToggle } from "../../../components/ThemeLanguageToggle";
 import { useLanguage } from "../../../context/LanguageContext";
@@ -271,7 +275,7 @@ export default function SettingsPage() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = "tg-signer-config.json";
+            a.download = BRAND_EXPORT_FILENAME;
             a.click();
             addToast(t("export_success"), "success");
         } catch (err: any) {
@@ -428,7 +432,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="top-right-actions">
                     <a
-                        href="https://github.com/akasls/TG-SignPulse"
+                        href={BRAND_REPOSITORY_URL}
                         target="_blank"
                         rel="noreferrer"
                         className="action-btn"
