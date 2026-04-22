@@ -61,8 +61,11 @@ services:
       # - APP_TOTP_VALID_WINDOW=1
 
       # ===== Telegram / Pyrogram =====
-      # Telegram API 凭证统一在 UI -> 系统设置 -> Telegram API 配置 中设置
-      # 这里故意不再提供 TG_API_ID / TG_API_HASH
+      # Telegram API 凭证：如果 UI 还未保存过配置，初次启动时会先读环境变量
+      # 一旦在 UI -> 系统设置 -> Telegram API 配置 中保存新值，运行时优先使用 UI 配置
+      # 未设置时最终回退到项目内置默认凭证
+      # - TG_API_ID=123456
+      # - TG_API_HASH=your_api_hash_here
 
       # 共享代理地址，例如 socks5://127.0.0.1:1080
       # - TG_PROXY=socks5://127.0.0.1:1080

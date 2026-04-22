@@ -149,13 +149,13 @@ tools/        辅助工具脚本
 
 当前版本已经把运行时配置收口到统一入口。部署时请按下面的顺序理解“谁覆盖谁”：
 
-1. 容器或进程环境变量，是大多数运行时配置的最高优先级。
-2. 面板写入工作目录的配置文件，只对少数可持久化配置生效。
-3. 环境变量和持久化配置都没有时，才回退到代码默认值。
+1. 大多数基础运行项，仍然是容器或进程环境变量优先。
+2. 少数持久化配置按各自规则读取，典型例子是 Telegram API、AI 配置和数据目录。
+3. 对应来源都没有值时，才回退到代码默认值。
 
 重点规则：
 
-- Telegram API 凭证统一从 `.telegram_api.json` 读取；未在 UI 中设置时回退到项目内置默认凭证。
+- Telegram API 凭证优先级为 `.telegram_api.json` > `TG_API_ID` / `TG_API_HASH` > 项目内置默认凭证。适合首次启动先用环境变量注入，后续在 UI 中改完后直接以 UI 为准。
 - AI 配置统一从 `.openai_config.json` 读取；如果 UI 未配置，AI 功能视为未启用。
 - 数据目录最终取 `APP_DATA_DIR_OVERRIDE_FILE` 指向的覆盖文件内容；未设置时默认 `/data`。
 - 单次任务或登录显式传入的代理 > 账号代理 > `TG_PROXY`。
@@ -193,10 +193,12 @@ tools/        辅助工具脚本
 
 ### Telegram / Pyrogram
 
-Telegram API 凭证现统一在 `系统设置 -> Telegram API 配置` 中维护，不再通过环境变量覆盖运行时配置。
+Telegram API 支持“初次启动先用环境变量，后续 UI 保存后以 UI 为准”的模式，优先级为 `.telegram_api.json` > `TG_API_ID` / `TG_API_HASH` > 内置默认值。
 
 | 变量 | 默认值 / 示例 | 说明 |
 |---|---|---|
+| `TG_API_ID` | `123456`（示例） | Telegram API ID；当 UI 还未保存 Telegram API 配置时，用于初次启动注入 |
+| `TG_API_HASH` | `your_api_hash_here` | Telegram API Hash；当 UI 还未保存 Telegram API 配置时，用于初次启动注入 |
 | `TG_PROXY` | `socks5://127.0.0.1:1080` | 共享代理地址 |
 | `TG_DEVICE_MODEL` | `Samsung Galaxy S24` | 自定义设备型号 |
 | `TG_SYSTEM_VERSION` | `SDK 35` | 自定义系统版本 |
