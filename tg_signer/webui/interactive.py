@@ -11,8 +11,8 @@ from tg_signer.config import (
     ReplyByCalculationProblemAction,
     SendDiceAction,
     SendTextAction,
-    SignChatV3,
-    SignConfigV3,
+    SignChatV4,
+    SignConfigV4,
     SupportAction,
 )
 from tg_signer.webui.data import load_user_infos, save_config
@@ -42,11 +42,11 @@ class InteractiveSignerConfig:
             self.task_name = initial_name or "my_sign"
             self.sign_at = "06:00:00"
             self.random_seconds = 0
-            self.chats: List[SignChatV3] = []
+            self.chats: List[SignChatV4] = []
 
             if initial_config:
                 try:
-                    loaded = SignConfigV3.load(initial_config)
+                    loaded = SignConfigV4.load(initial_config)
                     if loaded:
                         cfg, _ = loaded
                         self.sign_at = cfg.sign_at
@@ -141,7 +141,7 @@ class InteractiveSignerConfig:
     def edit_chat(self, index: int):
         self.open_chat_dialog(chat=self.chats[index], index=index)
 
-    def open_chat_dialog(self, chat: Optional[SignChatV3] = None, index: int = -1):
+    def open_chat_dialog(self, chat: Optional[SignChatV4] = None, index: int = -1):
         # Chat Dialog State
         d_chat_id = chat.chat_id if chat else None
         d_name = chat.name if chat else ""
@@ -389,7 +389,7 @@ class InteractiveSignerConfig:
                             f"第一个动作必须为「{SupportAction.SEND_TEXT.desc}」或「{SupportAction.SEND_DICE.desc}」"
                         )
 
-                    new_chat = SignChatV3(
+                    new_chat = SignChatV4(
                         chat_id=cid,
                         name=name_input.value.strip() or None,
                         delete_after=int(del_input.value) if del_input.value else None,
@@ -422,7 +422,7 @@ class InteractiveSignerConfig:
                 raise ValueError("请至少添加一个签到任务")
 
             # Validate config
-            config = SignConfigV3(
+            config = SignConfigV4(
                 chats=self.chats,
                 sign_at=self.sign_at,
                 random_seconds=self.random_seconds,

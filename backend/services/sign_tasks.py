@@ -33,6 +33,14 @@ from tg_signer.core import UserSigner, get_client
 settings = get_settings()
 
 
+def _normalize_chat_action_interval(chat: dict, config_version) -> dict:
+    """Migrate action_interval from seconds to milliseconds for configs older than v4."""
+    normalized = dict(chat)
+    if config_version is None or config_version < 4:
+        normalized["action_interval"] = int(float(normalized.get("action_interval", 1)) * 1000)
+    return normalized
+
+
 class TaskLogHandler(logging.Handler):
     """
     自定义日志处理器，将日志实时写入到内存列表中
@@ -590,13 +598,19 @@ class SignTaskService:
                     task_dir, account_name=config.get("account_name", "")
                 )
 
+            config_version = config.get("_version")
+            chats = [
+                _normalize_chat_action_interval(c, config_version)
+                for c in config.get("chats", [])
+            ]
+
             return {
                 "name": task_dir.name,
                 "account_name": config.get("account_name", ""),
                 "sign_at": config.get("sign_at", ""),
                 "random_seconds": config.get("random_seconds", 0),
                 "sign_interval": config.get("sign_interval", 1),
-                "chats": config.get("chats", []),
+                "chats": chats,
                 "enabled": True,
                 "last_run": last_run,
                 "execution_mode": config.get("execution_mode", "fixed"),
@@ -636,13 +650,19 @@ class SignTaskService:
             with open(config_file, "r", encoding="utf-8") as f:
                 config = json.load(f)
 
+            config_version = config.get("_version")
+            chats = [
+                _normalize_chat_action_interval(c, config_version)
+                for c in config.get("chats", [])
+            ]
+
             return {
                 "name": task_name,
                 "account_name": config.get("account_name", ""),
                 "sign_at": config.get("sign_at", ""),
                 "random_seconds": config.get("random_seconds", 0),
                 "sign_interval": config.get("sign_interval", 1),
-                "chats": config.get("chats", []),
+                "chats": chats,
                 "enabled": True,
                 "execution_mode": config.get("execution_mode", "fixed"),
                 "range_start": config.get("range_start", ""),
@@ -689,9 +709,7 @@ class SignTaskService:
             sign_interval = random.randint(1, 120)
 
         config = {
-            "_version": 3,
-            "account_name": account_name,
-            "sign_at": sign_at,
+            "_version": 4,
             "random_seconds": random_seconds,
             "sign_interval": sign_interval,
             "chats": chats,
@@ -768,7 +786,7 @@ class SignTaskService:
 
         # 更新配置
         config = {
-            "_version": 3,
+            "_version": 4,
             "account_name": acc_name,
             "sign_at": sign_at if sign_at is not None else existing["sign_at"],
             "random_seconds": random_seconds

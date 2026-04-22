@@ -290,7 +290,7 @@ export default function AccountTasksContent() {
         chat_name: "",
         actions: [{ action: 1, text: "" }],
         delete_after: undefined as number | undefined,
-        action_interval: 1,
+        action_interval: 1000,
         execution_mode: "range" as "fixed" | "range",
         range_start: "09:00",
         range_end: "18:00",
@@ -308,7 +308,7 @@ export default function AccountTasksContent() {
         chat_name: "",
         actions: [{ action: 1, text: "" }] as any[],
         delete_after: undefined as number | undefined,
-        action_interval: 1,
+        action_interval: 1000,
         execution_mode: "fixed" as "fixed" | "range",
         range_start: "09:00",
         range_end: "18:00",
@@ -838,7 +838,7 @@ export default function AccountTasksContent() {
                 chat_name: "",
                 actions: [{ action: 1, text: "" }],
                 delete_after: undefined,
-                action_interval: 1,
+                action_interval: 1000,
                 execution_mode: "fixed",
                 range_start: "09:00",
                 range_end: "18:00",
@@ -877,7 +877,7 @@ export default function AccountTasksContent() {
             chat_name: chat?.name || "",
             actions: chat?.actions || [{ action: 1, text: "" }],
             delete_after: chat?.delete_after,
-            action_interval: chat?.action_interval || 1,
+            action_interval: chat?.action_interval || 1000,
             execution_mode: task.execution_mode || "fixed",
             range_start: task.range_start || "09:00",
             range_end: task.range_end || "18:00",
@@ -1116,7 +1116,7 @@ export default function AccountTasksContent() {
                                         className="!mb-0"
                                         value={showCreateDialog ? newTask.action_interval : editTask.action_interval}
                                         onChange={(e) => {
-                                            const val = parseInt(e.target.value) || 1;
+                                            const val = parseInt(e.target.value) || 1000;
                                             showCreateDialog
                                                 ? setNewTask({ ...newTask, action_interval: val })
                                                 : setEditTask({ ...editTask, action_interval: val });
