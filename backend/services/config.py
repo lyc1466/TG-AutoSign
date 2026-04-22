@@ -262,6 +262,95 @@ class ConfigService:
         except (json.JSONDecodeError, KeyError):
             return False
 
+    def export_sign_tasks(
+        self, account_name: str, task_names: Optional[List[str]] = None
+    ) -> str:
+        """
+        导出账号下所有（或指定）签到任务的批量 JSON
+
+        Args:
+            account_name: 要导出的账号名称
+            task_names: 限定任务名称列表（None 表示全部）
+
+        Returns:
+            批量导出 JSON 字符串
+        """
+        acc_dir = self.signs_dir / account_name
+        tasks = []
+
+        if acc_dir.is_dir():
+            for task_dir in sorted(acc_dir.iterdir()):
+                if not task_dir.is_dir():
+                    continue
+                if task_names is not None and task_dir.name not in task_names:
+                    continue
+                config_file = task_dir / "config.json"
+                if not config_file.exists():
+                    continue
+                try:
+                    with open(config_file, "r", encoding="utf-8") as f:
+                        config = json.load(f)
+                    config = dict(config)
+                    config.pop("last_run", None)
+                    config.pop("account_name", None)
+                    tasks.append({"task_name": task_dir.name, "config": config})
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+        payload = {
+            "task_type": "sign-batch",
+            "account_name": account_name,
+            "tasks": tasks,
+        }
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+
+    def import_sign_tasks(
+        self,
+        json_str: str,
+        target_account_name: str,
+        overwrite: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        批量导入签到任务
+
+        Args:
+            json_str: export_sign_tasks 产生的 JSON 字符串
+            target_account_name: 目标账号名称
+            overwrite: 是否覆盖已存在的任务
+
+        Returns:
+            {"imported": int, "skipped": int, "errors": list[str]}
+        """
+        result: Dict[str, Any] = {"imported": 0, "skipped": 0, "errors": []}
+
+        try:
+            data = json.loads(json_str)
+        except json.JSONDecodeError as exc:
+            result["errors"].append(f"Invalid JSON: {exc}")
+            return result
+
+        for item in data.get("tasks", []):
+            task_name = item.get("task_name")
+            config = item.get("config")
+            if not task_name or config is None:
+                result["errors"].append(f"Malformed task entry: {item!r}")
+                continue
+
+            task_dir = self.signs_dir / target_account_name / task_name
+            if task_dir.exists() and not overwrite:
+                result["skipped"] += 1
+                continue
+
+            full_config = dict(config)
+            full_config["account_name"] = target_account_name
+
+            if self.save_sign_config(task_name, full_config):
+                result["imported"] += 1
+            else:
+                result["errors"].append(f"Failed to save task: {task_name}")
+
+        return result
+
     def export_all_configs(self) -> str:
         """
         导出所有配置
