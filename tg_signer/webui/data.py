@@ -5,12 +5,12 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple
 
 from backend.core.runtime_config import get_legacy_signer_runtime_config
-from tg_signer.config import BaseJSONConfig, MonitorConfig, SignConfigV3
+from tg_signer.config import BaseJSONConfig, MonitorConfig, SignConfigV4
 
 ConfigKind = Literal["signer", "monitor"]
 
 CONFIG_META: dict[ConfigKind, Tuple[str, type[BaseJSONConfig]]] = {
-    "signer": ("signs", SignConfigV3),
+    "signer": ("signs", SignConfigV4),
     "monitor": ("monitors", MonitorConfig),
 }
 

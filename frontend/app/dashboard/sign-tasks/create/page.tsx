@@ -187,7 +187,7 @@ export default function CreateSignTaskPage() {
             chat_id: 0,
             name: "",
             actions: [],
-            action_interval: 1,
+            action_interval: 1000,
         });
     };
 

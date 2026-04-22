@@ -32,7 +32,7 @@ SIGNER_TEMPLATE: Dict[str, object] = {
             "name": "示例任务",
             "delete_after": None,
             "actions": [{"action": 1, "text": "签到"}],
-            "action_interval": 1,
+            "action_interval": 1000,
         }
     ],
     "sign_at": "0 6 * * *",

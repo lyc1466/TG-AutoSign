@@ -353,13 +353,82 @@ class SignChatV3(BaseJSONConfig):
 class SignConfigV3(BaseJSONConfig):
     version: ClassVar = 3
     olds: ClassVar = [SignConfigV2]
-    is_current: ClassVar = True
+    is_current: ClassVar = False
 
     _version: Literal[3] = 3
     chats: List[SignChatV3]
     sign_at: str  # 签到时间，time或crontab表达式
     random_seconds: int = 0
     sign_interval: int = 1  # 连续签到的间隔时间，单位秒
+
+    @property
+    def requires_ai(self) -> bool:
+        return any(chat.requires_ai for chat in self.chats)
+
+    @property
+    def requires_updates(self) -> bool:
+        return any(chat.requires_updates for chat in self.chats)
+
+    @classmethod
+    def to_current(cls, obj: "SignConfigV3"):
+        return SignConfigV4(
+            sign_at=obj.sign_at,
+            random_seconds=obj.random_seconds,
+            sign_interval=obj.sign_interval,
+            chats=[SignChatV4.from_v3(c) for c in obj.chats],
+        )
+
+
+class SignChatV4(BaseJSONConfig):
+    version: ClassVar = 4
+    chat_id: int
+    name: Optional[str] = None
+    delete_after: Optional[int] = None
+    actions: List[ActionT]
+    action_interval: int = 1000  # 动作间隔，单位毫秒
+
+    @classmethod
+    def from_v3(cls, obj: "SignChatV3") -> "SignChatV4":
+        return cls(
+            chat_id=obj.chat_id,
+            name=obj.name,
+            delete_after=obj.delete_after,
+            actions=obj.actions,
+            action_interval=int(float(obj.action_interval) * 1000),
+        )
+
+    @property
+    def requires_ai(self) -> bool:
+        ai_actions = {
+            SupportAction.CHOOSE_OPTION_BY_IMAGE,
+            SupportAction.REPLY_BY_CALCULATION_PROBLEM,
+            SupportAction.REPLY_BY_IMAGE_RECOGNITION,
+            SupportAction.CLICK_BUTTON_BY_CALCULATION_PROBLEM,
+        }
+        return any(action.action in ai_actions for action in self.actions)
+
+    @property
+    def requires_updates(self) -> bool:
+        response_actions = {
+            SupportAction.CLICK_KEYBOARD_BY_TEXT,
+            SupportAction.CHOOSE_OPTION_BY_IMAGE,
+            SupportAction.REPLY_BY_CALCULATION_PROBLEM,
+            SupportAction.REPLY_BY_IMAGE_RECOGNITION,
+            SupportAction.CLICK_BUTTON_BY_CALCULATION_PROBLEM,
+        }
+        return any(action.action in response_actions for action in self.actions)
+
+
+class SignConfigV4(BaseJSONConfig):
+    version: ClassVar = 4
+    olds: ClassVar = [SignConfigV3]
+    is_current: ClassVar = True
+
+    _version: Literal[4] = 4
+    chats: List[SignChatV4]
+    sign_at: str
+    random_seconds: int = 0
+    sign_interval: int = 1
 
     @property
     def requires_ai(self) -> bool:
