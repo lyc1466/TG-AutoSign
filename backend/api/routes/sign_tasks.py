@@ -255,6 +255,14 @@ async def update_sign_task(
     current_user=Depends(get_current_user),
 ):
     """更新签到任务"""
+    # 在进入服务层前校验新名称的合法性，非法输入 → 400
+    if payload.name is not None:
+        n = payload.name
+        if not n or "/" in n or "\\" in n or ".." in n or "\x00" in n:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="任务名称无效",
+            )
     try:
         # 检查任务是否存在
         existing = get_sign_task_service().get_task(task_name, account_name=account_name)

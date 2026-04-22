@@ -789,6 +789,15 @@ class SignTaskService:
             else existing.get("range_end", ""),
         }
 
+        # 提前校验重命名，确保在写入配置前失败，避免脏数据
+        effective_task_name = task_name
+        target_dir = None
+        if new_task_name and new_task_name != task_name:
+            target_dir = self.signs_dir / acc_name / new_task_name
+            if target_dir.exists():
+                raise ValueError(f"任务 {new_task_name} 已存在")
+            effective_task_name = new_task_name
+
         # 保存配置
         task_dir = self.signs_dir / acc_name / task_name
         if not task_dir.exists():
@@ -799,16 +808,9 @@ class SignTaskService:
         with open(config_file, "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
 
-        # 重命名目录（如果请求了新任务名称）
-        effective_task_name = task_name
-        if new_task_name and new_task_name != task_name:
-            if "/" in new_task_name or "\\" in new_task_name or ".." in new_task_name:
-                raise ValueError(f"Invalid task name: {new_task_name!r}")
-            target_dir = self.signs_dir / acc_name / new_task_name
-            if target_dir.exists():
-                raise ValueError(f"任务 {new_task_name} 已存在")
+        # 执行目录重命名
+        if target_dir is not None:
             task_dir.rename(target_dir)
-            effective_task_name = new_task_name
 
         # Invalidate cache
         self._tasks_cache = None
