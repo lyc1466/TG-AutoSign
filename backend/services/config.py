@@ -11,6 +11,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.core.config import get_settings
+
+
+def _is_safe_name(name: str) -> bool:
+    """Return True if name is safe as a single filesystem path component."""
+    if not isinstance(name, str) or not name:
+        return False
+    if name in (".", ".."):
+        return False
+    if "/" in name or "\\" in name or "\x00" in name:
+        return False
+    return True
 from backend.utils.storage import (
     clear_data_dir_override,
     is_writable_dir,
@@ -261,6 +272,124 @@ class ConfigService:
 
         except (json.JSONDecodeError, KeyError):
             return False
+
+    def export_sign_tasks(
+        self, account_name: str, task_names: Optional[List[str]] = None
+    ) -> str:
+        """
+        导出账号下所有（或指定）签到任务的批量 JSON
+
+        Args:
+            account_name: 要导出的账号名称
+            task_names: 限定任务名称列表（None 表示全部）
+
+        Returns:
+            批量导出 JSON 字符串
+        """
+        if not _is_safe_name(account_name):
+            raise ValueError(f"Invalid account_name: {account_name!r}")
+        acc_dir = self.signs_dir / account_name
+        tasks = []
+
+        if acc_dir.is_dir():
+            for task_dir in sorted(acc_dir.iterdir()):
+                if not task_dir.is_dir():
+                    continue
+                if task_names is not None and task_dir.name not in task_names:
+                    continue
+                config_file = task_dir / "config.json"
+                if not config_file.exists():
+                    continue
+                try:
+                    with open(config_file, "r", encoding="utf-8") as f:
+                        config = json.load(f)
+                    config = dict(config)
+                    config.pop("last_run", None)
+                    config.pop("account_name", None)
+                    tasks.append({"task_name": task_dir.name, "config": config})
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+        payload = {
+            "task_type": "sign-batch",
+            "account_name": account_name,
+            "tasks": tasks,
+        }
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+
+    def import_sign_tasks(
+        self,
+        json_str: str,
+        target_account_name: str,
+        overwrite: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        批量导入签到任务
+
+        Args:
+            json_str: export_sign_tasks 产生的 JSON 字符串
+            target_account_name: 目标账号名称
+            overwrite: 是否覆盖已存在的任务
+
+        Returns:
+            {"imported": int, "skipped": int, "errors": list[str]}
+        """
+        result: Dict[str, Any] = {"imported": 0, "skipped": 0, "errors": []}
+
+        if not _is_safe_name(target_account_name):
+            result["errors"].append(f"Invalid target_account_name: {target_account_name!r}")
+            return result
+
+        try:
+            data = json.loads(json_str)
+        except json.JSONDecodeError as exc:
+            result["errors"].append(f"Invalid JSON: {exc}")
+            return result
+
+        if not isinstance(data, dict):
+            result["errors"].append("Invalid payload: top-level JSON value must be an object")
+            return result
+
+        tasks = data.get("tasks", [])
+        if not isinstance(tasks, list):
+            result["errors"].append("Invalid payload: 'tasks' must be a list")
+            return result
+
+        for item in tasks:
+            if not isinstance(item, dict):
+                result["errors"].append(
+                    f"Malformed task entry: expected object, got {type(item).__name__}"
+                )
+                continue
+
+            task_name = item.get("task_name")
+            config = item.get("config")
+
+            if not isinstance(task_name, str) or not task_name:
+                result["errors"].append(f"Malformed task entry: invalid task_name in {item!r}")
+                continue
+            if not isinstance(config, dict):
+                result["errors"].append(
+                    f"Malformed task entry: invalid config for task {task_name!r}"
+                )
+                continue
+            if not _is_safe_name(task_name):
+                result["errors"].append(f"Invalid task_name: {task_name!r}")
+                continue
+
+            task_dir = self.signs_dir / target_account_name / task_name
+            if task_dir.exists() and not overwrite:
+                result["skipped"] += 1
+                continue
+
+            full_config = dict(config)
+            full_config["account_name"] = target_account_name
+            if self.save_sign_config(task_name, full_config):
+                result["imported"] += 1
+            else:
+                result["errors"].append(f"Failed to save task: {task_name}")
+
+        return result
 
     def export_all_configs(self) -> str:
         """
