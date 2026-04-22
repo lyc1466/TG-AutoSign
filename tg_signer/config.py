@@ -397,6 +397,27 @@ class SignChatV4(BaseJSONConfig):
             action_interval=int(float(obj.action_interval) * 1000),
         )
 
+    @property
+    def requires_ai(self) -> bool:
+        ai_actions = {
+            SupportAction.CHOOSE_OPTION_BY_IMAGE,
+            SupportAction.REPLY_BY_CALCULATION_PROBLEM,
+            SupportAction.REPLY_BY_IMAGE_RECOGNITION,
+            SupportAction.CLICK_BUTTON_BY_CALCULATION_PROBLEM,
+        }
+        return any(action.action in ai_actions for action in self.actions)
+
+    @property
+    def requires_updates(self) -> bool:
+        response_actions = {
+            SupportAction.CLICK_KEYBOARD_BY_TEXT,
+            SupportAction.CHOOSE_OPTION_BY_IMAGE,
+            SupportAction.REPLY_BY_CALCULATION_PROBLEM,
+            SupportAction.REPLY_BY_IMAGE_RECOGNITION,
+            SupportAction.CLICK_BUTTON_BY_CALCULATION_PROBLEM,
+        }
+        return any(action.action in response_actions for action in self.actions)
+
 
 class SignConfigV4(BaseJSONConfig):
     version: ClassVar = 4

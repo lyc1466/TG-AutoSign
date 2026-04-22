@@ -710,6 +710,8 @@ class SignTaskService:
 
         config = {
             "_version": 4,
+            "account_name": account_name,
+            "sign_at": sign_at,
             "random_seconds": random_seconds,
             "sign_interval": sign_interval,
             "chats": chats,

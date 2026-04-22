@@ -55,6 +55,7 @@ from tg_signer.config import (
     SendTextAction,
     SignChatV3,
     SignConfigV3,
+    SignConfigV4,
     SupportAction,
     UDPForward,
 )
@@ -813,6 +814,23 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
             chat_messages=defaultdict(dict),
             waiting_message=None,
         )
+
+    def load_config(self, cfg_cls=None):
+        cfg_cls = cfg_cls or self.cfg_cls
+        if not self.config_file.exists():
+            config = self.reconfig()
+        else:
+            with open(self.config_file, "r", encoding="utf-8") as fp:
+                raw = json.load(fp)
+            config, from_old = cfg_cls.load(raw)
+            if from_old:
+                self.write_config(config)
+            # configs before v4 stored action_interval in seconds; v4+ stores ms
+            if raw.get("_version", 3) < 4:
+                for chat in config.chats:
+                    chat.action_interval = int(float(chat.action_interval) * 1000)
+        self.config = config
+        return config
 
     def _load_chat_cache(self) -> List[dict]:
         try:
