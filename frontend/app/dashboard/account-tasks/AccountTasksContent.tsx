@@ -750,9 +750,21 @@ export default function AccountTasksContent() {
         try {
             setBatchImporting(true);
             const result = await importSignTasks(token, json, accountName, batchImportOverwrite);
-            addToast(result.message || (isZh ? "批量导入完成" : "Batch import done"), "success");
-            setShowBatchImportDialog(false);
-            setBatchImportJson("");
+            const importErrors = Array.isArray(result.errors) ? result.errors : [];
+            if (importErrors.length > 0) {
+                const errorSummary = importErrors.slice(0, 3).join("; ");
+                addToast(
+                    result.message ||
+                        (isZh
+                            ? `批量导入存在问题：${errorSummary}`
+                            : `Batch import completed with errors: ${errorSummary}`),
+                    "error"
+                );
+            } else {
+                addToast(result.message || (isZh ? "批量导入完成" : "Batch import done"), "success");
+                setShowBatchImportDialog(false);
+                setBatchImportJson("");
+            }
             await loadData(token);
         } catch (err: any) {
             addToast(err?.message ? `Import failed: ${err.message}` : "Import failed", "error");

@@ -11,6 +11,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.core.config import get_settings
+
+
+def _is_safe_name(name: str) -> bool:
+    """Return True if name is safe as a single filesystem path component."""
+    if not isinstance(name, str) or not name:
+        return False
+    if name in (".", ".."):
+        return False
+    if "/" in name or "\\" in name or "\x00" in name:
+        return False
+    return True
 from backend.utils.storage import (
     clear_data_dir_override,
     is_writable_dir,
@@ -275,6 +286,8 @@ class ConfigService:
         Returns:
             批量导出 JSON 字符串
         """
+        if not _is_safe_name(account_name):
+            raise ValueError(f"Invalid account_name: {account_name!r}")
         acc_dir = self.signs_dir / account_name
         tasks = []
 
@@ -323,17 +336,45 @@ class ConfigService:
         """
         result: Dict[str, Any] = {"imported": 0, "skipped": 0, "errors": []}
 
+        if not _is_safe_name(target_account_name):
+            result["errors"].append(f"Invalid target_account_name: {target_account_name!r}")
+            return result
+
         try:
             data = json.loads(json_str)
         except json.JSONDecodeError as exc:
             result["errors"].append(f"Invalid JSON: {exc}")
             return result
 
-        for item in data.get("tasks", []):
+        if not isinstance(data, dict):
+            result["errors"].append("Invalid payload: top-level JSON value must be an object")
+            return result
+
+        tasks = data.get("tasks", [])
+        if not isinstance(tasks, list):
+            result["errors"].append("Invalid payload: 'tasks' must be a list")
+            return result
+
+        for item in tasks:
+            if not isinstance(item, dict):
+                result["errors"].append(
+                    f"Malformed task entry: expected object, got {type(item).__name__}"
+                )
+                continue
+
             task_name = item.get("task_name")
             config = item.get("config")
-            if not task_name or config is None:
-                result["errors"].append(f"Malformed task entry: {item!r}")
+
+            if not isinstance(task_name, str) or not task_name:
+                result["errors"].append(f"Malformed task entry: invalid task_name in {item!r}")
+                continue
+            if not isinstance(config, dict):
+                result["errors"].append(
+                    f"Malformed task entry: invalid config for task {task_name!r}"
+                )
+                continue
+            if not _is_safe_name(task_name):
+                result["errors"].append(f"Invalid task_name: {task_name!r}")
                 continue
 
             task_dir = self.signs_dir / target_account_name / task_name
@@ -343,7 +384,6 @@ class ConfigService:
 
             full_config = dict(config)
             full_config["account_name"] = target_account_name
-
             if self.save_sign_config(task_name, full_config):
                 result["imported"] += 1
             else:
