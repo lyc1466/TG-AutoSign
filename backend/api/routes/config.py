@@ -64,6 +64,19 @@ class TaskListResponse(BaseModel):
     total: int
 
 
+class ImportSignTasksRequest(BaseModel):
+    config_json: str
+    account_name: str
+    overwrite: bool = False
+
+
+class ImportSignTasksResponse(BaseModel):
+    imported: int
+    skipped: int
+    errors: list[str]
+    message: str
+
+
 @router.get("/tasks", response_model=TaskListResponse)
 def list_all_tasks(current_user: User = Depends(get_current_user)):
     try:
@@ -248,6 +261,77 @@ async def delete_sign_task(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete task: {str(e)}",
+        )
+
+
+@router.get("/export/signs")
+def export_sign_tasks(
+    account_name: str,
+    task_name: Optional[list[str]] = None,
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        config_json = get_config_service().export_sign_tasks(
+            account_name=account_name, task_names=task_name
+        )
+        return Response(
+            content=config_json.encode("utf-8"),
+            media_type="application/json; charset=utf-8",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export sign tasks: {str(e)}",
+        )
+
+
+@router.post("/import/signs", response_model=ImportSignTasksResponse)
+async def import_sign_tasks(
+    request: ImportSignTasksRequest, current_user: User = Depends(get_current_user)
+):
+    try:
+        service = get_config_service()
+        if not is_writable_dir(service.signs_dir):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Data directory is not writable: {service.signs_dir}",
+            )
+
+        result = service.import_sign_tasks(
+            request.config_json,
+            target_account_name=request.account_name,
+            overwrite=request.overwrite,
+        )
+
+        _clear_sign_task_cache()
+
+        from backend.scheduler import sync_jobs
+        await sync_jobs()
+
+        imported = int(result.get("imported", 0))
+        skipped = int(result.get("skipped", 0))
+        errors = [str(e) for e in result.get("errors", [])]
+        parts = []
+        if imported:
+            parts.append(f"{imported} imported")
+        if skipped:
+            parts.append(f"{skipped} skipped")
+        if errors:
+            parts.append(f"{len(errors)} errors")
+        message = "; ".join(parts) if parts else "Nothing to import"
+
+        return ImportSignTasksResponse(
+            imported=imported,
+            skipped=skipped,
+            errors=errors,
+            message=message,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import sign tasks: {str(e)}",
         )
 
 
