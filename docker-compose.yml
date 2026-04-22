@@ -3,8 +3,8 @@ version: '3.8'
 services:
   app:
     build: .
-    image: tg-signpulse:latest
-    container_name: tg-signpulse
+    image: tg-autosign:latest
+    container_name: tg-autosign
     ports:
       - "8080:8080"
     volumes:
@@ -13,6 +13,18 @@ services:
       - PORT=8080
       - APP_DATA_DIR=/data
       - TZ=Asia/Shanghai
+      # Telegram API 凭据（可选，有内置默认值）
+      # - TG_API_ID=your_api_id
+      # - TG_API_HASH=your_api_hash
+      # 共享代理（可选，客户端统一读取；账号单独设置代理时会覆盖）
+      # - TG_PROXY=socks5://ip:port
+      # 自定义设备信息（可选，已有内置默认值：Samsung Galaxy S24 / SDK 35 / 11.4.2）
+      # 注意：应用名称由 API ID 决定，非此处控制
+      # - TG_DEVICE_MODEL=Samsung Galaxy S24
+      # - TG_SYSTEM_VERSION=SDK 35
+      # - TG_APP_VERSION=11.4.2
+      # - TG_LANG_CODE=zh
+      
     init: true
     read_only: true
     tmpfs:

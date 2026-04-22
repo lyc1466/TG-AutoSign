@@ -35,12 +35,21 @@ async def _export_session_string(
     account_name: str, session_dir: Path, api_id: int, api_hash: str
 ) -> str | None:
     session_path = str(session_dir / account_name)
+    # Attach optional device/system info from environment variables
+    try:
+        from tg_signer.core import get_client_device_kwargs
+
+        device_kwargs = get_client_device_kwargs()
+    except Exception:
+        device_kwargs = {}
+
     client = Client(
         name=session_path,
         api_id=api_id,
         api_hash=api_hash,
         in_memory=False,
         no_updates=True,
+        **(device_kwargs or {}),
     )
     try:
         await client.connect()

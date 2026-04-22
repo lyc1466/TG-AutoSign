@@ -594,6 +594,13 @@ class TelegramService:
             # 手机号验证码登录不依赖 updates，关闭可减少 flood/timeout 噪音
             "no_updates": True,
         }
+        try:
+            from tg_signer.core import get_client_device_kwargs
+
+            client_kwargs.update(get_client_device_kwargs())
+        except Exception:
+            pass
+
         client = Client(**client_kwargs)
 
         try:
@@ -1048,6 +1055,13 @@ class TelegramService:
         }
         # QR 登录依赖 UpdateLoginToken，必须启用 updates（无论 session 模式）
         client_kwargs["no_updates"] = False
+        try:
+            from tg_signer.core import get_client_device_kwargs
+
+            client_kwargs.update(get_client_device_kwargs())
+        except Exception:
+            pass
+
         client = Client(**client_kwargs)
 
         try:

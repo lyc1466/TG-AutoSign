@@ -1,108 +1,136 @@
-# TG-SignPulse
+# TG-AutoSign
 
 [English README](README_EN.md)
 
-TG-SignPulse 是一个 Telegram 自动化管理面板。你可以在网页里管理多个账号，配置自动签到任务，并让任务按固定规则每天自动执行。
+TG-AutoSign 是一个面向 Telegram 自动化任务的管理面板与运行时项目。它支持多账号管理、自动签到、消息发送、按钮点击、日志可视化，以及 AI 能力接入，适合在本地环境、VPS 或 Docker 容器中长期运行。
 
-> AI 驱动：项目已集成 AI 能力（识图、计算题），可直接用于自动任务流程。
+> 当前仓库在原有项目基础上继续维护，并补充了面板化、容器化、设备参数统一化与部署说明。
 
-## 这个项目是做什么的？
+## 项目能力
 
-- 统一管理多个 Telegram 账号
-- 自动签到、定时发送消息、点击按钮
-- 支持 AI 识图和 AI 计算题动作
-- 在网页中查看任务执行日志和历史结果
-- 适合 VPS 长期运行
+- 多账号 Telegram 管理
+- 自动签到、定时消息、按钮点击等任务动作
+- AI 识图、AI 计算题等自动化动作
+- Web 面板查看执行日志、历史记录与账号状态
+- Docker / Docker Compose / GHCR 工作流支持
+- 自定义 Telegram Client 设备参数，便于统一部署环境
 
-## 项目特点
+## 快速开始
 
-- 多账号管理：一个面板管理多个账号
-- 动作序列：支持「发送文本 / 点击文字按钮 / 发送骰子 / AI识图 / AI计算」
-- 日志可视化：可查看任务执行流程和最后机器人回复
-- 稳定性优化：并发控制、429/超时场景优化、长期运行内存优化
-- 容器化部署：Docker / Docker Compose 开箱即用
+默认管理账号：
 
-## 小白 3 步部署（推荐）
+- 用户名：`admin`
+- 密码：如果未设置 `ADMIN_PASSWORD`，默认会创建为 `admin123`
 
-1. 安装 Docker（服务器和本机都可）
-2. 执行下面命令启动容器
-3. 浏览器打开 `http://服务器IP:8080`，用默认账号登录
+首次登录后请立即修改密码。
 
-默认凭据：
-- 账号：`admin`
-- 密码：`admin123`
+### 方式一：通过 Docker 命令启动
 
-### 一条命令启动
+最直接的启动方式就是直接运行镜像：
 
 ```bash
 docker run -d \
-  --name tg-signpulse \
+  --name tg-autosign \
   --restart unless-stopped \
   -p 8080:8080 \
   -v $(pwd)/data:/data \
   -e TZ=Asia/Shanghai \
   -e APP_SECRET_KEY=your_secret_key \
-  ghcr.io/akasls/tg-signpulse:latest
+  -e ADMIN_PASSWORD=change_me \
+  ghcr.io/lyc1466/tg-autosign:latest
 ```
 
-如果你走反代（如 Nginx），可改成仅本机监听：
+如果你使用反向代理，建议仅监听本机：
 
 ```bash
 -p 127.0.0.1:8080:8080
 ```
 
-### Docker Compose（可选）
+启动后访问：`http://你的服务器IP:8080`
+
+### 方式二：通过 Docker Compose 启动
+
+你也可以自己写一个 `docker-compose.yml`，例如：
 
 ```yaml
 services:
   app:
-    image: ghcr.io/akasls/tg-signpulse:latest
-    container_name: tg-signpulse
+    image: ghcr.io/lyc1466/tg-autosign:latest
+    container_name: tg-autosign
     restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
       - ./data:/data
     environment:
+      - PORT=8080
+      - APP_DATA_DIR=/data
       - TZ=Asia/Shanghai
       - APP_SECRET_KEY=your_secret_key
+      - ADMIN_PASSWORD=change_me
 ```
 
-## 数据目录与权限说明
+保存后执行：
+
+```bash
+docker compose up -d
+```
+
+启动后访问：`http://你的服务器IP:8080`
+
+### 方式三：下载源码运行
+
+如果你希望直接运行源码，建议按下面的顺序操作：
+
+```bash
+git clone https://github.com/lyc1466/TG-AutoSign.git
+cd TG-AutoSign
+```
+
+1. 按 `.env.example` 准备环境变量
+  如果你直接在 shell 中启动，也可以手动导出这些变量
+  `APP_SECRET_KEY` 在实际运行时必须设置
+2. 安装 Python 依赖
+3. 安装前端依赖并构建前端静态资源
+4. 启动后端服务
+
+一个常见流程示例：
+
+```bash
+pip install -e .
+cd frontend
+npm install
+npm run build
+cd ..
+uvicorn backend.main:app --host 0.0.0.0 --port 8080
+```
+
+启动后访问：`http://你的服务器IP:8080`
+
+## 构建卡顿时使用代理
+
+如果 `docker build` 在依赖下载阶段卡顿，可尝试：
+
+```bash
+docker build \
+  --build-arg HTTP_PROXY=http://127.0.0.1:7890 \
+  --build-arg HTTPS_PROXY=http://127.0.0.1:7890 \
+  -t tg-autosign .
+```
+
+## 数据目录与权限
 
 - 默认数据目录：`/data`
-- 当 `/data` 不可写时，会自动降级到 `/tmp/tg-signpulse`（非持久化）
-- 新镜像已支持根据 `/data` 挂载目录属主 UID/GID 自动适配运行身份，通常无需 `chmod 777`
+- 如果 `/data` 不可写，当前实现会回退到 `/tmp/tg-signpulse`（非持久化）
+- 容器内运行时会尽量适配挂载目录权限，但仍建议确保挂载卷可写
 
-容器内排查命令：
+可在容器内快速排查：
 
 ```bash
 id
 ls -ld /data
 touch /data/.probe && rm /data/.probe
 ```
-
-## 常用环境变量（简版）
-
-- `APP_SECRET_KEY`: 面板密钥，强烈建议设置
-- `ADMIN_PASSWORD`: 初次安装时 admin 账户的默认密码（安全起见强烈建议设置，未设置则默认 admin123）
-- `APP_HOST`: FastAPI 容器监听 IP，防暴露默认 `127.0.0.1`（如需用公网直连或宿主机反代端口请设为 `0.0.0.0`）
-- `APP_DATA_DIR`: 自定义数据目录（优先级高于面板配置）
-- `TG_SESSION_MODE`: `file`（默认）或 `string`（arm64 推荐）
-- `TG_SESSION_NO_UPDATES`: `1` 启用 `no_updates`（仅 `string` 模式）
-- `TG_GLOBAL_CONCURRENCY`: 全局并发（默认 `1`）
-- `APP_TOTP_VALID_WINDOW`: 面板 2FA 容错窗口
-
-## 自定义数据目录
-
-你可以通过两种方式设置数据目录：
-
-1. 面板设置：`系统设置 -> 全局签到设置 -> 数据目录`
-2. 环境变量：`APP_DATA_DIR=/your/path`
-
-说明：
-- 修改后建议重启后端服务生效
-- 该目录请务必可写，并挂载持久化卷
 
 ## 健康检查
 
@@ -112,52 +140,115 @@ touch /data/.probe && rm /data/.probe
 ## 项目结构
 
 ```text
-backend/      FastAPI 后端与调度器
-tg_signer/    Telegram 自动化核心
+backend/      FastAPI 后端、调度与 API
+tg_signer/    Telegram 自动化核心与 CLI
 frontend/     Next.js 管理面板
+docker/       容器入口脚本
+tools/        辅助工具脚本
 ```
 
-## 更新日志
+## 全部环境变量
 
-### 2026-03-20
+以下内容与 `.env.example` 保持一致，建议部署时按需配置。
 
-- **SQLite 死锁修复**：完善了 Pyrogram 客户端实例和底层的生命周期缓存，彻底修复了由于高并发请求和后台任务轮询导致的 `database is locked` 互斥死锁问题。如今并发的后台签到队列会平滑共用连接进行极速的写入，极大降低了硬盘 I/O 且杜绝了任务卡死。
-- **防止任务重复执行 UI 防护**：前端新增防连点与重叠保护。当用户点击“运行任务”时，若任务已在执行，系统不仅会弹出“该任务正在运行中”的柔性截断提示，并且能在全局面板无缝切换为您呈现该任务当前的实时拉取日志流。
+### 运行环境
 
-### 2026-03-19
+| 变量 | 默认值 / 示例 | 说明 |
+|---|---|---|
+| `APP_HOST` | `127.0.0.1` | API 监听地址；反向代理或容器直连时可改为 `0.0.0.0` |
+| `APP_PORT` | `3000`（示例） | 面板模式端口，仅 panel 示例常用 |
+| `PORT` | `8080` | 后端容器监听端口 |
+| `TZ` | `Asia/Shanghai` | 容器时区 |
+| `APP_TIMEZONE` | `Asia/Shanghai`（可选） | 面板调度时区，默认继承 `TZ` |
+| `APP_DATA_DIR` | `/data` | 数据目录 |
+| `APP_DATA_DIR_OVERRIDE_FILE` | `.tg_signpulse_data_dir` | 数据目录覆盖文件路径，高级选项 |
+| `APP_DB_PATH` | `/data/db.sqlite` | SQLite 数据库文件路径，高级选项 |
+| `APP_SIGNER_WORKDIR` | `/data/.signer` | 签到任务工作目录，高级选项 |
+| `APP_SESSION_DIR` | `/data/sessions` | Telegram session 存储目录，高级选项 |
+| `APP_LOGS_DIR` | `/data/logs` | 应用日志目录，高级选项 |
 
-- **主页状态显示修复**：修复由于前端状态对比字样问题导致账号“正常”却误报“账号失效”的显示错误。
-- **老账号签到异常修复**：修复老账号（基于本地 `.session` 文件的环境）在执行任务时被错误锁定在纯内存模式，从而导致 SQLite 本地数据丢失、出现 `PeerIdInvalid` 并导致签到失败的问题。恢复了纯本地存储后，跨账号复制任务的解析逻辑也更加稳定。
-- **机器人最近回复可视**：优化日志解析引擎。当任务包含向机器人发送消息时，现支持从底量日志中无感提取机器人的最后一句话或图片回复，并直接高亮在前端的可视化任务面板与历史大表哥中。
-- **代码规范排版**：执行了全面的 Linter 与 Ruff 的扫描，修复多处过期导入。
+### 安全与登录
 
-### 2026-03-12
-- 修复核心底层问题：修复因 Pyrogram 请求超时及 `FloodWait` 重试引发的并发锁饥饿、`Task exception` 未正确回收导致容器内存泄漏及网络高 I/O 问题。
+| 变量 | 默认值 / 示例 | 说明 |
+|---|---|---|
+| `APP_APP_NAME` | `tg-signer-panel` | 面板应用名称 |
+| `APP_SECRET_KEY` | `your_secret_key_here` | 面板密钥，强烈建议显式设置 |
+| `APP_ACCESS_TOKEN_EXPIRE_HOURS` | `12` | 登录令牌有效期（小时） |
+| `ADMIN_PASSWORD` | `change_me`（可选） | 初始管理员密码；未设置时默认 `admin123` |
+| `APP_TOTP_VALID_WINDOW` | `1`（示例） | 2FA TOTP 时间窗口容差 |
 
-### 2026-03-06
+### Telegram / Pyrogram
 
-- 任务动作序列优化：排序调整为「发送文本消息 -> 点击文字按钮 -> 发送骰子 -> AI识图 -> AI计算」。
-- AI 动作优化：`AI识图`、`AI计算`支持在右侧子模式切换（发文本 / 点按钮）。
-- 任务复制粘贴优化：
-  - 复制任务改为弹窗展示配置，支持一键复制。
-  - 右上角粘贴导入优先自动读剪贴板，失败时自动弹出手动粘贴导入框。
-- 日志展示优化：任务日志弹窗支持显示“任务：XXX执行成功/失败”及最后机器人消息。
-- 主页状态检测优化：刷新/打开页面时账号状态检测更稳，减少误报“检测失败”。
-- 移动端与弹窗 UI 优化：任务卡片操作区布局更紧凑，动作序列控件高度更统一。
-- 导出编码修复：修复含 emoji 配置导出时的编码问题（UTF-8）。
-- 容器权限兼容增强：按 `/data` 挂载目录属主 UID/GID 自动适配运行身份，降低 VPS 写入失败概率。
+| 变量 | 默认值 / 示例 | 说明 |
+|---|---|---|
+| `TG_API_ID` | `123456`（示例） | Telegram API ID |
+| `TG_API_HASH` | `your_api_hash_here` | Telegram API Hash |
+| `TG_PROXY` | `socks5://127.0.0.1:1080` | 共享代理地址 |
+| `TG_DEVICE_MODEL` | `Samsung Galaxy S24` | 自定义设备型号 |
+| `TG_SYSTEM_VERSION` | `SDK 35` | 自定义系统版本 |
+| `TG_APP_VERSION` | `11.4.2` | 自定义客户端版本 |
+| `TG_LANG_CODE` | `zh` | 语言代码 |
+| `TG_SESSION_MODE` | `file` | Session 存储模式，支持 `file` / `string` |
+| `TG_SESSION_NO_UPDATES` | `0` | 是否关闭更新接收 |
+| `TG_NO_UPDATES` | `0` | `TG_SESSION_NO_UPDATES` 的兼容别名 |
+| `TG_GLOBAL_CONCURRENCY` | `1` | 全局并发数 |
 
-### 2026-03-01
+### 签到 / 任务调度
 
-- AI 动作升级、AI 配置保存修复、手机号验证码登录改为手动确认。
-- `TimeoutError` 与 `429 transport flood` 高频日志优化。
-- 长时运行稳定性与内存占用优化。
-- 新增自定义数据目录配置。
+| 变量 | 默认值 / 示例 | 说明 |
+|---|---|---|
+| `SIGN_TASK_ACCOUNT_COOLDOWN` | `5` | 同账号任务冷却秒数 |
+| `SIGN_TASK_FORCE_IN_MEMORY` | `0` | 是否强制使用内存模式 |
+| `SIGN_TASK_HISTORY_MAX_ENTRIES` | `100` | 单任务历史条数上限 |
+| `SIGN_TASK_HISTORY_MAX_FLOW_LINES` | `200` | 单次日志流保留行数上限 |
+| `SIGN_TASK_HISTORY_MAX_LINE_CHARS` | `500` | 单行日志字符上限 |
+
+### AI 配置
+
+| 变量 | 默认值 / 示例 | 说明 |
+|---|---|---|
+| `OPENAI_API_KEY` | `sk-...` | 启用 AI 功能所需 |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI 兼容接口地址 |
+| `OPENAI_MODEL` | `gpt-4o` | 默认模型 |
+
+### 前端构建变量
+
+| 变量 | 默认值 / 示例 | 说明 |
+|---|---|---|
+| `NEXT_PUBLIC_API_BASE` | `/api` | 前端请求 API 的基础路径 |
+
+### 面板 / CLI 辅助变量
+
+| 变量 | 默认值 / 示例 | 说明 |
+|---|---|---|
+| `TG_SIGNER_WORKDIR` | `.signer` | CLI 工作目录 |
+| `TG_ACCOUNT` | `my_account` | 当前账号名 |
+| `TG_SESSION_STRING` | `...` | 字符串会话 |
+| `TG_SIGNER_GUI_AUTHCODE` | `...` | GUI 授权码 |
+| `SERVER_CHAN_SEND_KEY` | `...` | Server酱推送密钥 |
+
+### 日志
+
+| 变量 | 默认值 / 示例 | 说明 |
+|---|---|---|
+| `PYROGRAM_LOG_ON` | `0` | 是否开启 Pyrogram 日志 |
+
+## 自定义数据目录
+
+可通过两种方式设置：
+
+1. 面板设置：`系统设置 -> 全局设置 -> 数据目录`
+2. 环境变量：`APP_DATA_DIR=/your/path`
+
+建议：
+
+- 修改后重启服务
+- 目录必须可写
+- 生产环境请挂载持久化卷
 
 ## 致谢
 
-本项目基于原项目进行重构与扩展，感谢：
+本项目在以下项目基础上进行了复刻、重构与扩展，感谢原作者与社区贡献：
 
-- 原项目：[tg-signer](https://github.com/amchii/tg-signer) by [amchii](https://github.com/amchii)
-
-技术栈：FastAPI、Uvicorn、APScheduler、Pyrogram/Kurigram、Next.js、Tailwind CSS、OpenAI SDK。
+- [TG-SignPulse](https://github.com/akasls/TG-SignPulse.git)
+- [tg-signer](https://github.com/amchii/tg-signer.git)

@@ -1,4 +1,6 @@
-﻿FROM node:20-slim AS frontend-builder
+﻿# If `docker build` stalls on dependency downloads, try building with a proxy, e.g.:
+# docker build --build-arg HTTP_PROXY=http://127.0.0.1:7890 --build-arg HTTPS_PROXY=http://127.0.0.1:7890 -t tg-autosign .
+FROM node:20-slim AS frontend-builder
 
 WORKDIR /frontend
 

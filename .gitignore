@@ -36,6 +36,7 @@ pip-delete-this-directory.txt
 # Unit test / coverage reports
 htmlcov/
 .tox/
+.pytest_cache/
 .coverage
 .coverage.*
 .cache
@@ -125,6 +126,12 @@ _test*.json
 .nicegui
 
 .agent
+
+# local analysis / comparison artifacts
+comparison/
+bandit_report*.json
+ruff_errors.txt
+git_show_head*.txt
 
 frontend/node_modules/
 frontend/.next/

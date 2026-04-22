@@ -1,48 +1,43 @@
-# TG-SignPulse
+# TG-AutoSign
 
 [中文说明](README.md)
 
-TG-SignPulse is a Telegram automation panel. It helps you manage multiple accounts, run auto check-in tasks, and monitor execution logs from a web UI.
+TG-AutoSign is a Telegram automation project with a web management panel. It supports multi-account management, auto sign-in workflows, message and button actions, AI-assisted tasks, execution logs, and Docker-based deployment.
 
-> AI-powered: AI actions (vision/math) are integrated and can be used directly in task workflows.
+> This repository continues maintenance on top of earlier projects and adds panelization, containerization, unified client device parameters, and deployment guidance.
 
-## What Is This Project For?
+## Capabilities
 
 - Manage multiple Telegram accounts in one place
-- Automate check-ins, message sending, and button clicking
-- Use AI actions for image recognition and math challenges
-- View execution flow logs and recent bot replies
-- Run reliably on a VPS for long-term automation
+- Automate sign-ins, scheduled messages, and button actions
+- Use AI Vision and AI Calculate actions in workflows
+- Inspect logs, history, and account states from a web panel
+- Run with Docker, Docker Compose, and GHCR image publishing
+- Unify Telegram Client device parameters for consistent deployments
 
-## Key Features
+## Quick Start
 
-- Multi-account management
-- Action sequences: `Send Text`, `Click Text Button`, `Send Dice`, `AI Vision`, `AI Calculate`
-- Visual logs with task-level details
-- Stability improvements for timeout/429 scenarios and long-running memory behavior
-- Docker-first deployment (easy to start and migrate)
+Default admin account:
 
-## Beginner Deployment (3 Steps)
-
-1. Install Docker
-2. Run the container command below
-3. Open `http://YOUR_SERVER_IP:8080` in a browser and log in
-
-Default credentials:
 - Username: `admin`
-- Password: `admin123`
+- Password: if `ADMIN_PASSWORD` is not set, the default password is `admin123`
 
-### One-command Deploy
+Change the password immediately after first login.
+
+### Method 1: Start with a Docker command
+
+The most direct way is to run the image directly:
 
 ```bash
 docker run -d \
-  --name tg-signpulse \
+  --name tg-autosign \
   --restart unless-stopped \
   -p 8080:8080 \
   -v $(pwd)/data:/data \
   -e TZ=Asia/Shanghai \
   -e APP_SECRET_KEY=your_secret_key \
-  ghcr.io/akasls/tg-signpulse:latest
+  -e ADMIN_PASSWORD=change_me \
+  ghcr.io/lyc1466/tg-autosign:latest
 ```
 
 If you use a reverse proxy, bind locally only:
@@ -51,30 +46,85 @@ If you use a reverse proxy, bind locally only:
 -p 127.0.0.1:8080:8080
 ```
 
-### Docker Compose (Optional)
+Then visit: `http://YOUR_SERVER_IP:8080`
+
+### Method 2: Start with Docker Compose
+
+You can also write your own `docker-compose.yml`, for example:
 
 ```yaml
 services:
   app:
-    image: ghcr.io/akasls/tg-signpulse:latest
-    container_name: tg-signpulse
+    image: ghcr.io/lyc1466/tg-autosign:latest
+    container_name: tg-autosign
     restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
       - ./data:/data
     environment:
+      - PORT=8080
+      - APP_DATA_DIR=/data
       - TZ=Asia/Shanghai
       - APP_SECRET_KEY=your_secret_key
+      - ADMIN_PASSWORD=change_me
 ```
 
-## Data Directory & Permissions
+After saving the file, run:
+
+```bash
+docker compose up -d
+```
+
+Then visit: `http://YOUR_SERVER_IP:8080`
+
+### Method 3: Download the source code and run it
+
+If you prefer running from source, a typical flow is:
+
+```bash
+git clone https://github.com/lyc1466/TG-AutoSign.git
+cd TG-AutoSign
+```
+
+1. Prepare environment variables based on `.env.example`
+  If you launch from a shell directly, you can export them manually
+  `APP_SECRET_KEY` must be set for a real run
+2. Install Python dependencies
+3. Install frontend dependencies and build static assets
+4. Start the backend service
+
+A common example flow:
+
+```bash
+pip install -e .
+cd frontend
+npm install
+npm run build
+cd ..
+uvicorn backend.main:app --host 0.0.0.0 --port 8080
+```
+
+Then visit: `http://YOUR_SERVER_IP:8080`
+
+## Build with Proxy When Downloads Stall
+
+If `docker build` stalls during dependency downloads, try:
+
+```bash
+docker build \
+  --build-arg HTTP_PROXY=http://127.0.0.1:7890 \
+  --build-arg HTTPS_PROXY=http://127.0.0.1:7890 \
+  -t tg-autosign .
+```
+
+## Data Directory and Permissions
 
 - Default data directory: `/data`
-- If `/data` is not writable, app falls back to `/tmp/tg-signpulse` (non-persistent)
-- New images can auto-adapt runtime UID/GID to `/data` owner in most VPS setups (usually no need for `chmod 777`)
+- If `/data` is not writable, the current implementation falls back to `/tmp/tg-signpulse` (non-persistent)
+- The container tries to adapt runtime permissions to the mounted volume, but the mounted path should still be writable
 
-Container checks:
+Useful checks inside the container:
 
 ```bash
 id
@@ -82,82 +132,123 @@ ls -ld /data
 touch /data/.probe && rm /data/.probe
 ```
 
-## Common Environment Variables
+## Health Checks
 
-- `APP_SECRET_KEY`: panel secret key (strongly recommended)
-- `ADMIN_PASSWORD`: initial default password for the admin user (strongly recommended, otherwise defaults to insecure 'admin123')
-- `APP_HOST`: API listening interface (defaults to `127.0.0.1` for security; use `0.0.0.0` if exposing container globally)
-- `APP_DATA_DIR`: custom data directory (higher priority than panel setting)
-- `TG_SESSION_MODE`: `file` (default) or `string` (recommended on arm64)
-- `TG_SESSION_NO_UPDATES`: set `1` to enable `no_updates` (`string` mode only)
-- `TG_GLOBAL_CONCURRENCY`: global concurrency limit (default `1`)
-- `APP_TOTP_VALID_WINDOW`: panel 2FA tolerance window
+- `GET /healthz`: quick health check
+- `GET /readyz`: readiness check
+
+## Project Structure
+
+```text
+backend/      FastAPI backend, scheduler, and APIs
+tg_signer/    Telegram automation core and CLI
+frontend/     Next.js management panel
+docker/       Container entry scripts
+tools/        Helper scripts
+```
+
+## Full Environment Variables
+
+The table below follows `.env.example`.
+
+### Runtime
+
+| Variable | Default / Example | Description |
+|---|---|---|
+| `APP_HOST` | `127.0.0.1` | API bind address; use `0.0.0.0` for direct exposure or reverse proxy setups |
+| `APP_PORT` | `3000` (example) | Port for panel-mode example |
+| `PORT` | `8080` | Backend container port |
+| `TZ` | `Asia/Shanghai` | Container timezone |
+| `APP_TIMEZONE` | `Asia/Shanghai` (optional) | Panel scheduler timezone; defaults to `TZ` |
+| `APP_DATA_DIR` | `/data` | Data directory |
+| `APP_DATA_DIR_OVERRIDE_FILE` | `.tg_signpulse_data_dir` | Override file path for the data directory |
+| `APP_DB_PATH` | `/data/db.sqlite` | SQLite database file path |
+| `APP_SIGNER_WORKDIR` | `/data/.signer` | Task work directory |
+| `APP_SESSION_DIR` | `/data/sessions` | Telegram session directory |
+| `APP_LOGS_DIR` | `/data/logs` | Application logs directory |
+
+### Security and Login
+
+| Variable | Default / Example | Description |
+|---|---|---|
+| `APP_APP_NAME` | `tg-signer-panel` | Panel application name |
+| `APP_SECRET_KEY` | `your_secret_key_here` | Panel secret key; strongly recommended to set |
+| `APP_ACCESS_TOKEN_EXPIRE_HOURS` | `12` | Access token lifetime in hours |
+| `ADMIN_PASSWORD` | `change_me` (optional) | Initial admin password; defaults to `admin123` if unset |
+| `APP_TOTP_VALID_WINDOW` | `1` (example) | TOTP tolerance window for 2FA |
+
+### Telegram / Pyrogram
+
+| Variable | Default / Example | Description |
+|---|---|---|
+| `TG_API_ID` | `123456` (example) | Telegram API ID |
+| `TG_API_HASH` | `your_api_hash_here` | Telegram API hash |
+| `TG_PROXY` | `socks5://127.0.0.1:1080` | Shared proxy URL |
+| `TG_DEVICE_MODEL` | `Samsung Galaxy S24` | Custom device model |
+| `TG_SYSTEM_VERSION` | `SDK 35` | Custom system version |
+| `TG_APP_VERSION` | `11.4.2` | Custom app version |
+| `TG_LANG_CODE` | `zh` | Language code |
+| `TG_SESSION_MODE` | `file` | Session storage mode: `file` or `string` |
+| `TG_SESSION_NO_UPDATES` | `0` | Disable receiving updates |
+| `TG_NO_UPDATES` | `0` | Backward-compatible alias of `TG_SESSION_NO_UPDATES` |
+| `TG_GLOBAL_CONCURRENCY` | `1` | Global concurrency limit |
+
+### Sign Tasks / Scheduling
+
+| Variable | Default / Example | Description |
+|---|---|---|
+| `SIGN_TASK_ACCOUNT_COOLDOWN` | `5` | Cooldown seconds for the same account |
+| `SIGN_TASK_FORCE_IN_MEMORY` | `0` | Force in-memory mode |
+| `SIGN_TASK_HISTORY_MAX_ENTRIES` | `100` | Max history entries per task |
+| `SIGN_TASK_HISTORY_MAX_FLOW_LINES` | `200` | Max flow log lines per run |
+| `SIGN_TASK_HISTORY_MAX_LINE_CHARS` | `500` | Max characters per log line |
+
+### AI
+
+| Variable | Default / Example | Description |
+|---|---|---|
+| `OPENAI_API_KEY` | `sk-...` | Required to enable AI features |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible endpoint |
+| `OPENAI_MODEL` | `gpt-4o` | Default AI model |
+
+### Frontend Build
+
+| Variable | Default / Example | Description |
+|---|---|---|
+| `NEXT_PUBLIC_API_BASE` | `/api` | Base path used by the frontend when calling APIs |
+
+### Panel / CLI Helpers
+
+| Variable | Default / Example | Description |
+|---|---|---|
+| `TG_SIGNER_WORKDIR` | `.signer` | CLI work directory |
+| `TG_ACCOUNT` | `my_account` | Current account name |
+| `TG_SESSION_STRING` | `...` | String session value |
+| `TG_SIGNER_GUI_AUTHCODE` | `...` | GUI auth code |
+| `SERVER_CHAN_SEND_KEY` | `...` | ServerChan push key |
+
+### Logging
+
+| Variable | Default / Example | Description |
+|---|---|---|
+| `PYROGRAM_LOG_ON` | `0` | Enable Pyrogram logging |
 
 ## Custom Data Directory
 
 You can set the data directory in two ways:
 
-1. Panel: `System Settings -> Global Sign-in Settings -> Data Directory`
-2. Env var: `APP_DATA_DIR=/your/path`
+1. Panel: `System Settings -> Global Settings -> Data Directory`
+2. Environment variable: `APP_DATA_DIR=/your/path`
 
-Notes:
-- Restart backend service after changing it
-- The path must be writable and mounted as persistent volume
+Recommendations:
 
-## Health Checks
-
-- `GET /healthz`: quick health endpoint
-- `GET /readyz`: readiness endpoint
-
-## Project Structure
-
-```text
-backend/      FastAPI backend and scheduler
-tg_signer/    Telegram automation core
-frontend/     Next.js management panel
-```
-
-## Changelog
-
-### 2026-03-20
-
-- **SQLite Database Deadlock Fixed**: Hardened the Pyrogram client lifecycle cache, completely eliminating the overlapping `database is locked` errors previously caused by concurrent UI polling overlapping with worker queues. Background executions now smoothly multiplex SQLite connections, resulting in significantly lower I/O and zero queuing deadlocks.
-- **Task Prevention UI**: Improved the frontend with protection logic against double-calling tasks. If the user accidentally clicks 'Run' on an actively executing task, the app will gracefully block the action, display a warning that the task is currently in progress, and immediately pivot to streaming its live logs instead.
-
-### 2026-03-19
-
-- **Account Status Display Fix**: Fixed a frontend string-matching bug where completely normal accounts were erroneously displayed as "Account Invalid".
-- **Old Account Execution Fix**: Resolved critical `PeerIdInvalid` execution crashes for older local `.session` file-based accounts. The task engine was mistakenly defaulting them into an in-memory session mode overriding their reliable local SQLite database, resulting in a loss of tracked peers. Now, caching and cross-account task copying are highly stable.
-- **Bot Final Reply Extraction**: Enhanced log parsing engine. During successful message exchanges, the engine automatically extracts the final reply text from the target signed-bot and presents it beautifully in both the frontend run logs and execution table, keeping the UI intact. 
-- **Code Linter**: Ran full project health & Ruff linter checks, safely pruning dead code.
-
-### 2026-03-12
-- Core stability fix: Fixed a severe memory leak and high network I/O issue caused by Pyrogram timeout & `FloodWait` infinite retry loops leading to async lock starvation and unretrieved task exceptions.
-
-### 2026-03-06
-
-- Action sequence order optimized: `Send Text -> Click Text Button -> Send Dice -> AI Vision -> AI Calculate`.
-- AI actions refined: `AI Vision` and `AI Calculate` now support inline sub-modes (send text / click button).
-- Task copy/paste UX improved:
-  - Copy now opens a config dialog with one-click copy.
-  - Top-right paste import tries clipboard first; falls back to manual paste dialog when unavailable.
-- Task log dialog improved: now shows `Task: XXX succeeded/failed` and the latest bot reply.
-- Dashboard status checks improved on page open/refresh to reduce false "Check Failed".
-- Mobile/layout polish: task card action area is more compact, action-row control heights are unified.
-- UTF-8 export fix: resolved task copy/export errors with emoji content.
-- Container permission compatibility improved with `/data` owner UID/GID adaptation.
-
-### 2026-03-01
-
-- AI action upgrade, AI config save fix, and phone code login changed to manual confirmation.
-- Reduced frequent `TimeoutError` and `429 transport flood` logs.
-- Long-running stability and memory optimizations.
-- Added custom data directory support.
+- Restart the service after changing it
+- The target directory must be writable
+- Mount it as a persistent volume in production
 
 ## Acknowledgements
 
-This project is heavily refactored and extended based on the original project:
+This repository is cloned, refactored, and extended from the following projects. Thanks to the original authors and maintainers:
 
-- Original project: [tg-signer](https://github.com/amchii/tg-signer) by [amchii](https://github.com/amchii)
-
-Tech stack: FastAPI, Uvicorn, APScheduler, Pyrogram/Kurigram, Next.js, Tailwind CSS, OpenAI SDK.
+- [TG-SignPulse](https://github.com/akasls/TG-SignPulse.git)
+- [tg-signer](https://github.com/amchii/tg-signer.git)

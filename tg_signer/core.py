@@ -303,6 +303,34 @@ def get_api_config():
     return api_id, api_hash
 
 
+# 默认设备信息，防止 Docker 容器中 platform.node() 泄露随机容器名
+_DEFAULT_DEVICE_MODEL = "Samsung Galaxy S24"
+_DEFAULT_SYSTEM_VERSION = "SDK 35"
+_DEFAULT_APP_VERSION = "11.4.2"
+_DEFAULT_LANG_CODE = "zh"
+
+
+def get_client_device_kwargs() -> dict:
+    """
+    从环境变量收集 Pyrogram `Client` 的设备/系统信息参数。
+
+    支持的环境变量（可覆盖默认值）：
+      - TG_DEVICE_MODEL
+      - TG_SYSTEM_VERSION
+      - TG_APP_VERSION
+      - TG_LANG_CODE
+
+    始终返回完整的设备信息字典，未设置环境变量时使用内置默认值，
+    避免 Docker 环境下 Pyrogram 使用随机容器名作为 device_model。
+    """
+    return {
+        "device_model": os.environ.get("TG_DEVICE_MODEL") or _DEFAULT_DEVICE_MODEL,
+        "system_version": os.environ.get("TG_SYSTEM_VERSION") or _DEFAULT_SYSTEM_VERSION,
+        "app_version": os.environ.get("TG_APP_VERSION") or _DEFAULT_APP_VERSION,
+        "lang_code": os.environ.get("TG_LANG_CODE") or _DEFAULT_LANG_CODE,
+    }
+
+
 def get_proxy(proxy: str = None):
     proxy = proxy or os.environ.get("TG_PROXY")
     if proxy:
@@ -336,6 +364,14 @@ def get_client(
     key = str(pathlib.Path(workdir).joinpath(name).resolve())
     if key in _CLIENT_INSTANCES:
         return _CLIENT_INSTANCES[key]
+    # Apply environment-driven device information if caller didn't supply
+    try:
+        device_defaults = get_client_device_kwargs()
+        for k, v in device_defaults.items():
+            kwargs.setdefault(k, v)
+    except Exception:
+        pass
+
     client = Client(
         name,
         api_id=api_id,
