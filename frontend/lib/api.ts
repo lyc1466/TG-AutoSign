@@ -376,6 +376,53 @@ export const deleteSignConfig = (token: string, taskName: string, accountName?: 
   }, token);
 };
 
+// ============ 批量签到任务导入导出 ============
+
+export interface ImportSignTasksResponse {
+  imported: number;
+  skipped: number;
+  errors: string[];
+  message: string;
+}
+
+export const exportSignTasks = async (
+  token: string,
+  accountName: string,
+  taskNames?: string[]
+): Promise<string> => {
+  const params = new URLSearchParams();
+  params.append("account_name", accountName);
+  if (taskNames?.length) {
+    taskNames.forEach((name) => params.append("task_name", name));
+  }
+  const res = await fetch(`${API_BASE}/config/export/signs?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let errorMessage = "Export failed";
+    try {
+      const errorData = await res.json();
+      errorMessage = errorData.detail || errorData.message || JSON.stringify(errorData);
+    } catch {
+      errorMessage = (await res.text()) || "Export failed";
+    }
+    throw new Error(errorMessage);
+  }
+  return res.text();
+};
+
+export const importSignTasks = (
+  token: string,
+  configJson: string,
+  accountName: string,
+  overwrite = false
+) =>
+  request<ImportSignTasksResponse>("/config/import/signs", {
+    method: "POST",
+    body: JSON.stringify({ config_json: configJson, account_name: accountName, overwrite }),
+  }, token);
+
 // ============ 用户设置 ============
 
 export const changePassword = (token: string, oldPassword: string, newPassword: string) =>
