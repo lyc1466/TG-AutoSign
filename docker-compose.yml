@@ -23,6 +23,10 @@ services:
       - ADMIN_PASSWORD=change_me
 
       # ===== 常用可选项 =====
+      # Telegram API：首次启动可先用环境变量注入；若后续在 UI 中保存新值，则 UI 配置优先
+      # - TG_API_ID=123456
+      # - TG_API_HASH=your_api_hash_here
+
       # 共享代理；账号单独代理会覆盖这里
       # - TG_PROXY=socks5://127.0.0.1:1080
 
@@ -32,4 +36,4 @@ services:
       # - TG_APP_VERSION=11.4.2
       # - TG_LANG_CODE=zh
 
-      # Telegram API、AI 配置、数据目录统一在 UI -> 系统设置 中维护
+      # AI 配置、数据目录统一在 UI -> 系统设置 中维护

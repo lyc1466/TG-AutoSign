@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -693,6 +694,14 @@ class ConfigService:
 
         config = dict(default_config)
 
+        env_api_id = os.getenv("TG_API_ID")
+        env_api_hash = os.getenv("TG_API_HASH")
+        env_api_id = env_api_id.strip() if isinstance(env_api_id, str) else ""
+        env_api_hash = env_api_hash.strip() if isinstance(env_api_hash, str) else ""
+
+        if env_api_id and env_api_hash:
+            config["api_id"] = env_api_id
+            config["api_hash"] = env_api_hash
         if config_file.exists():
             try:
                 with open(config_file, "r", encoding="utf-8") as f:

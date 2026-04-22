@@ -47,6 +47,19 @@ def test_get_ai_config_prefers_ui_file_over_environment(monkeypatch, tmp_path):
     }
 
 
+def test_get_telegram_config_uses_environment_without_ui_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("TG_API_ID", "123456")
+    monkeypatch.setenv("TG_API_HASH", "env-hash")
+
+    service = _make_service(monkeypatch, tmp_path)
+
+    assert service.get_telegram_config() == {
+        "api_id": "123456",
+        "api_hash": "env-hash",
+        "is_custom": True,
+    }
+
+
 def test_get_telegram_config_prefers_ui_file_over_environment(monkeypatch, tmp_path):
     monkeypatch.setenv("TG_API_ID", "123456")
     monkeypatch.setenv("TG_API_HASH", "env-hash")

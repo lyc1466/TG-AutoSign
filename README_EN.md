@@ -149,13 +149,13 @@ tools/        Helper scripts
 
 Runtime configuration is now routed through a unified layer. When deploying, read precedence in this order:
 
-1. Container or process environment variables are the highest priority for most runtime settings.
-2. Files written by the panel inside the work directory only apply to a small set of persistent settings.
-3. Built-in defaults are used only when neither env nor persisted settings provide a value.
+1. Most base runtime settings are still primarily driven by container or process environment variables.
+2. A small set of persisted settings follow their own rules, especially Telegram API credentials, AI configuration, and the data directory.
+3. Built-in defaults are used only when the relevant env or persisted source does not provide a value.
 
 Key rules:
 
-- Telegram API credentials are now read from `.telegram_api.json`; if the UI has never stored them, runtime falls back to built-in default credentials.
+- Telegram API credentials now follow `.telegram_api.json` > `TG_API_ID` / `TG_API_HASH` > built-in defaults. This lets you inject credentials through env for the first boot, then let later UI changes take precedence.
 - AI configuration is now read from `.openai_config.json`; if the UI has not stored it, AI is treated as disabled.
 - The effective data directory now comes from the override file pointed to by `APP_DATA_DIR_OVERRIDE_FILE`; when unset, the default remains `/data`.
 - Per-request or per-login explicit proxy > account proxy > `TG_PROXY`.
@@ -193,10 +193,12 @@ The table below follows `.env.example`.
 
 ### Telegram / Pyrogram
 
-Telegram API credentials are now managed from `System Settings -> Telegram API Configuration` and are no longer overridden from environment variables.
+Telegram API credentials support a “use env on first boot, then prefer UI after it is saved” flow, with precedence `.telegram_api.json` > `TG_API_ID` / `TG_API_HASH` > built-in defaults.
 
 | Variable | Default / Example | Description |
 |---|---|---|
+| `TG_API_ID` | `123456` (example) | Telegram API ID used for initial bootstrapping when the UI has not saved Telegram API settings yet |
+| `TG_API_HASH` | `your_api_hash_here` | Telegram API hash used for initial bootstrapping when the UI has not saved Telegram API settings yet |
 | `TG_PROXY` | `socks5://127.0.0.1:1080` | Shared proxy URL |
 | `TG_DEVICE_MODEL` | `Samsung Galaxy S24` | Custom device model |
 | `TG_SYSTEM_VERSION` | `SDK 35` | Custom system version |
