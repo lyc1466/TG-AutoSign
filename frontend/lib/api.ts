@@ -631,6 +631,7 @@ export interface CreateSignTaskRequest {
 }
 
 export interface UpdateSignTaskRequest {
+  name?: string;
   sign_at?: string;
   chats?: SignTaskChat[];
   random_seconds?: number;

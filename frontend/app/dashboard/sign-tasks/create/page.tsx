@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { getToken } from "../../../../lib/auth";
 import {
     createSignTask,
@@ -70,6 +69,27 @@ export default function CreateSignTaskPage() {
         }, 800);
         return true;
     }, [addToast, router, t]);
+
+    const resetForm = useCallback(() => {
+        setTaskName("");
+        setExecutionMode("range");
+        setSignAt("0 6 * * *");
+        setRangeStart("09:00");
+        setRangeEnd("18:00");
+        setRandomSeconds(0);
+        setChatId(0);
+        setSignInterval(1);
+        setChats([]);
+        setEditingChat(null);
+        setChatSearch("");
+        setChatSearchResults([]);
+        setChatSearchLoading(false);
+    }, []);
+
+    const handleCancel = useCallback(() => {
+        resetForm();
+        router.replace("/dashboard/sign-tasks");
+    }, [resetForm, router]);
 
     // 当前编辑的 Chat
     const [editingChat, setEditingChat] = useState<{
@@ -232,9 +252,9 @@ export default function CreateSignTaskPage() {
         <div id="create-task-view" className="w-full h-full flex flex-col pt-[72px]">
             <nav className="navbar fixed top-0 left-0 right-0 z-50 h-[72px] px-5 md:px-10 flex justify-between items-center glass-panel rounded-none border-x-0 border-t-0 bg-white/2 dark:bg-black/5">
                 <div className="flex items-center gap-4">
-                    <Link href="/dashboard/sign-tasks" className="action-btn" title={t("cancel")}>
+                    <button onClick={handleCancel} className="action-btn" title={t("cancel")}>
                         <CaretLeft weight="bold" />
-                    </Link>
+                    </button>
                     <div className="flex items-center gap-2 text-sm font-medium">
                         <span className="text-main/40 uppercase tracking-widest text-[10px]">{t("sidebar_tasks")}</span>
                         <span className="text-main/20">/</span>
@@ -372,7 +392,7 @@ export default function CreateSignTaskPage() {
                     </section>
 
                     <div className="flex gap-4 pt-4">
-                        <button onClick={() => router.back()} className="btn-secondary flex-1">{t("cancel")}</button>
+                        <button onClick={handleCancel} className="btn-secondary flex-1">{t("cancel")}</button>
                         <button onClick={handleSubmit} disabled={loading} className="btn-gradient flex-1">
                             {loading ? <Spinner className="animate-spin mx-auto" weight="bold" /> : t("deploy_task")}
                         </button>

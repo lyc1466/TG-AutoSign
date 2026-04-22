@@ -748,6 +748,7 @@ class SignTaskService:
         execution_mode: Optional[str] = None,
         range_start: Optional[str] = None,
         range_end: Optional[str] = None,
+        new_task_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         更新签到任务
@@ -798,6 +799,17 @@ class SignTaskService:
         with open(config_file, "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
 
+        # 重命名目录（如果请求了新任务名称）
+        effective_task_name = task_name
+        if new_task_name and new_task_name != task_name:
+            if "/" in new_task_name or "\\" in new_task_name or ".." in new_task_name:
+                raise ValueError(f"Invalid task name: {new_task_name!r}")
+            target_dir = self.signs_dir / acc_name / new_task_name
+            if target_dir.exists():
+                raise ValueError(f"任务 {new_task_name} 已存在")
+            task_dir.rename(target_dir)
+            effective_task_name = new_task_name
+
         # Invalidate cache
         self._tasks_cache = None
 
@@ -806,7 +818,7 @@ class SignTaskService:
 
             add_or_update_sign_task_job(
                 config["account_name"],
-                task_name,
+                effective_task_name,
                 config.get("range_start")
                 if config.get("execution_mode") == "range"
                 else config["sign_at"],
@@ -821,11 +833,11 @@ class SignTaskService:
         else:
             self._append_scheduler_log(
                 "scheduler_update.log",
-                f"{datetime.now()}: Updated task {task_name} with cron {config.get('range_start') if config.get('execution_mode') == 'range' else config['sign_at']}",
+                f"{datetime.now()}: Updated task {effective_task_name} with cron {config.get('range_start') if config.get('execution_mode') == 'range' else config['sign_at']}",
             )
 
         return {
-            "name": task_name,
+            "name": effective_task_name,
             "account_name": config["account_name"],
             "sign_at": config["sign_at"],
             "random_seconds": config["random_seconds"],
