@@ -299,6 +299,7 @@ export default function AccountTasksContent() {
     // 缂傚倸鍊搁崐鎼佸磹瑜版帗鍋嬮柣鎰仛椤愯姤銇勯幇鍓佹偧妞も晝鍏橀幃褰掑炊閵娿儳绁峰銈庡亖閸婃繈骞冨Δ鍛仺婵炲牊瀵ч弫顖炴⒑娴兼瑧鐣虫俊顐㈠閵?
     const [showEditDialog, setShowEditDialog] = useState(false);
     const [editingTaskName, setEditingTaskName] = useState("");
+    const [originalTaskName, setOriginalTaskName] = useState("");
     const [editTask, setEditTask] = useState({
         sign_at: "0 6 * * *",
         random_minutes: 0,
@@ -866,6 +867,7 @@ export default function AccountTasksContent() {
 
     const handleEditTask = (task: SignTask) => {
         setEditingTaskName(task.name);
+        setOriginalTaskName(task.name);
         const chat = task.chats[0];
         setEditTask({
             sign_at: task.sign_at,
@@ -899,7 +901,8 @@ export default function AccountTasksContent() {
         try {
             setLoading(true);
 
-            await updateSignTask(token, editingTaskName, {
+            await updateSignTask(token, originalTaskName, {
+                name: editingTaskName,
                 sign_at: editTask.sign_at,
                 random_seconds: editTask.random_minutes * 60,
                 chats: [{
@@ -1056,7 +1059,7 @@ export default function AccountTasksContent() {
                                 <div className="p-2 bg-[#8a3ffc]/10 rounded-lg text-[#b57dff]">
                                     <Lightning weight="fill" size={20} />
                                 </div>
-                                {showCreateDialog ? t("create_task") : `${t("edit_task")}: ${editingTaskName}`}
+                                {showCreateDialog ? t("create_task") : `${t("edit_task")}: ${originalTaskName}`}
                             </div>
                             <div
                                 onClick={() => { setShowCreateDialog(false); setShowEditDialog(false); }}
@@ -1084,8 +1087,7 @@ export default function AccountTasksContent() {
                                         <input
                                             className="!mb-0"
                                             value={editingTaskName}
-                                            readOnly
-                                            aria-readonly="true"
+                                            onChange={(e) => setEditingTaskName(e.target.value)}
                                         />
                                     </div>
                                 )}

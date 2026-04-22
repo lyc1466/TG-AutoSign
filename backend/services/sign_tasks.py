@@ -748,6 +748,7 @@ class SignTaskService:
         execution_mode: Optional[str] = None,
         range_start: Optional[str] = None,
         range_end: Optional[str] = None,
+        new_task_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         更新签到任务
@@ -788,6 +789,15 @@ class SignTaskService:
             else existing.get("range_end", ""),
         }
 
+        # 提前校验重命名，确保在写入配置前失败，避免脏数据
+        effective_task_name = task_name
+        target_dir = None
+        if new_task_name and new_task_name != task_name:
+            target_dir = self.signs_dir / acc_name / new_task_name
+            if target_dir.exists():
+                raise ValueError(f"任务 {new_task_name} 已存在")
+            effective_task_name = new_task_name
+
         # 保存配置
         task_dir = self.signs_dir / acc_name / task_name
         if not task_dir.exists():
@@ -798,6 +808,10 @@ class SignTaskService:
         with open(config_file, "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
 
+        # 执行目录重命名
+        if target_dir is not None:
+            task_dir.rename(target_dir)
+
         # Invalidate cache
         self._tasks_cache = None
 
@@ -806,7 +820,7 @@ class SignTaskService:
 
             add_or_update_sign_task_job(
                 config["account_name"],
-                task_name,
+                effective_task_name,
                 config.get("range_start")
                 if config.get("execution_mode") == "range"
                 else config["sign_at"],
@@ -821,11 +835,11 @@ class SignTaskService:
         else:
             self._append_scheduler_log(
                 "scheduler_update.log",
-                f"{datetime.now()}: Updated task {task_name} with cron {config.get('range_start') if config.get('execution_mode') == 'range' else config['sign_at']}",
+                f"{datetime.now()}: Updated task {effective_task_name} with cron {config.get('range_start') if config.get('execution_mode') == 'range' else config['sign_at']}",
             )
 
         return {
-            "name": task_name,
+            "name": effective_task_name,
             "account_name": config["account_name"],
             "sign_at": config["sign_at"],
             "random_seconds": config["random_seconds"],

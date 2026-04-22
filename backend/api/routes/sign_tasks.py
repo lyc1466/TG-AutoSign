@@ -111,6 +111,7 @@ class SignTaskCreate(BaseModel):
 class SignTaskUpdate(BaseModel):
     """更新签到任务请求"""
 
+    name: Optional[str] = Field(None, description="新任务名称（不填则保持不变）")
     sign_at: Optional[str] = Field(None, description="签到时间（CRON 表达式）")
     chats: Optional[List[ChatConfig]] = Field(None, description="Chat 配置列表")
     random_seconds: Optional[int] = Field(None, description="随机延迟秒数")
@@ -254,6 +255,14 @@ async def update_sign_task(
     current_user=Depends(get_current_user),
 ):
     """更新签到任务"""
+    # 在进入服务层前校验新名称的合法性，非法输入 → 400
+    if payload.name is not None:
+        n = payload.name
+        if not n or "/" in n or "\\" in n or ".." in n or "\x00" in n:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="任务名称无效",
+            )
     try:
         # 检查任务是否存在
         existing = get_sign_task_service().get_task(task_name, account_name=account_name)
@@ -267,6 +276,7 @@ async def update_sign_task(
 
         task = get_sign_task_service().update_task(
             task_name=task_name,
+            new_task_name=payload.name,
             sign_at=payload.sign_at,
             chats=chats_dict,
             random_seconds=payload.random_seconds,
@@ -285,6 +295,8 @@ async def update_sign_task(
         return task
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except Exception as e:
         import traceback
 
