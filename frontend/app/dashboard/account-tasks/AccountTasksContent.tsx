@@ -30,7 +30,6 @@ import {
     Trash,
     Spinner,
     Clock,
-    ChatCircleText,
     CheckCircle,
     XCircle,
     Hourglass,
@@ -61,9 +60,10 @@ const DICE_OPTIONS = [
 ] as const;
 
 // Memoized Task Item Component
-const TaskItem = memo(({ task, loading, onEdit, onRun, onViewLogs, onCopy, onDelete, t, language }: {
+const TaskItem = memo(({ task, loading, isRunning, onEdit, onRun, onViewLogs, onCopy, onDelete, t, language }: {
     task: SignTask;
     loading: boolean;
+    isRunning?: boolean;
     onEdit: (task: SignTask) => void;
     onRun: (name: string) => void;
     onViewLogs: (task: SignTask) => void;
@@ -75,10 +75,12 @@ const TaskItem = memo(({ task, loading, onEdit, onRun, onViewLogs, onCopy, onDel
     const copyTaskTitle = language === "zh" ? "\u590D\u5236\u4EFB\u52A1" : "Copy Task";
 
     return (
-        <div className="glass-panel p-4 md:p-5 group hover:border-[#8a3ffc]/30 transition-all">
+        <div className={`glass-panel p-4 md:p-5 group transition-all ${isRunning ? 'border-[#8a3ffc]/50' : 'hover:border-[#8a3ffc]/30'}`}>
             <div className="flex items-start gap-4 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-[#8a3ffc]/10 flex items-center justify-center text-[#b57dff] shrink-0">
-                    <ChatCircleText weight="bold" size={20} />
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-[#b57dff] shrink-0 ${isRunning ? 'bg-[#8a3ffc]/25' : 'bg-[#8a3ffc]/15'}`}>
+                    {isRunning
+                        ? <Spinner weight="bold" size={20} className="animate-spin" />
+                        : <Lightning weight="fill" size={20} />}
                 </div>
                 <div className="min-w-0 flex-1 flex flex-col gap-2">
                     <div className="flex items-center gap-2">
@@ -86,6 +88,11 @@ const TaskItem = memo(({ task, loading, onEdit, onRun, onViewLogs, onCopy, onDel
                         <span className="text-[9px] font-mono text-main/30 bg-white/5 px-1.5 py-0.5 rounded border border-white/5">
                             {task.chats[0]?.chat_id || "-"}
                         </span>
+                        {isRunning && (
+                            <span className="text-[9px] font-bold text-[#8a3ffc] animate-pulse uppercase tracking-wider">
+                                {language === "zh" ? "运行中" : "Running"}
+                            </span>
+                        )}
                     </div>
                     <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1.5 text-main/40">
@@ -324,6 +331,7 @@ export default function AccountTasksContent() {
     const [batchImporting, setBatchImporting] = useState(false);
 
     const [checking, setChecking] = useState(true);
+    const [runningTaskName, setRunningTaskName] = useState<string | null>(null);
     const isZh = language === "zh";
     const taskNamePlaceholder = isZh ? "\u7559\u7A7A\u4F7F\u7528\u9ED8\u8BA4\u540D\u79F0" : "Leave empty to use default name";
     const sendTextLabel = isZh ? "\u53D1\u9001\u6587\u672C\u6D88\u606F" : "Send Text Message";
@@ -550,6 +558,7 @@ export default function AccountTasksContent() {
 
         try {
             setLoading(true);
+            setRunningTaskName(taskName);
             const result = await runSignTask(token, taskName, accountName);
 
             if (result.success) {
@@ -565,6 +574,7 @@ export default function AccountTasksContent() {
             addToast(formatErrorMessage("task_run_failed", err), "error");
         } finally {
             setLoading(false);
+            setRunningTaskName(null);
         }
     };
 
@@ -1037,6 +1047,7 @@ export default function AccountTasksContent() {
                                 key={task.name}
                                 task={task}
                                 loading={loading}
+                                isRunning={runningTaskName === task.name}
                                 onEdit={handleEditTask}
                                 onRun={handleRunTask}
                                 onViewLogs={handleShowTaskHistory}

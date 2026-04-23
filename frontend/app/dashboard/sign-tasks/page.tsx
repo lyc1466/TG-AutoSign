@@ -239,7 +239,9 @@ export default function SignTasksPage() {
                                     <div className="grid grid-cols-[1fr_auto] gap-3">
                                         <div className="min-w-0 space-y-2">
                                             <div className="flex items-center gap-2">
-                                                <Lightning weight="fill" size={12} className="text-[#b57dff] shrink-0" />
+                                                <div className="w-6 h-6 rounded-lg bg-[#8a3ffc]/20 flex items-center justify-center text-[#b57dff] shrink-0">
+                                                    <Lightning weight="fill" size={12} />
+                                                </div>
                                                 <span className="font-bold text-sm truncate" title={task.name}>{task.name}</span>
                                                 <span className="text-[9px] font-mono text-main/30 bg-white/5 px-1.5 py-0.5 rounded border border-white/5 shrink-0">
                                                     {task.chats[0]?.chat_id || "-"}
@@ -251,7 +253,7 @@ export default function SignTasksPage() {
                                                     : task.sign_at}
                                             </span>
                                             <div className="space-y-1 pt-2">
-                                                <span className={`inline-flex text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest border ${task.enabled ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-white/5 text-main/30 border-white/10'}`}>
+                                                <span className={`inline-flex text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest border ${task.enabled ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-white/5 text-main/50 border-white/10'}`}>
                                                     {task.enabled ? t("status_active") : t("status_paused")}
                                                 </span>
                                                 {task.last_run ? (
@@ -315,7 +317,7 @@ export default function SignTasksPage() {
                                         <div className="min-w-0">
                                             <h3 className="font-bold text-lg truncate pr-2" title={task.name}>{task.name}</h3>
                                             <div className="flex items-center gap-2 mt-1">
-                                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest border ${task.enabled ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-white/5 text-main/30 border-white/10'}`}>
+                                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest border ${task.enabled ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-white/5 text-main/50 border-white/10'}`}>
                                                     {task.enabled ? t("status_active") : t("status_paused")}
                                                 </span>
                                             </div>
@@ -325,14 +327,14 @@ export default function SignTasksPage() {
 
                                 <div className="space-y-4 mb-8">
                                     <div className="flex items-center justify-between p-3 bg-white/2 rounded-xl border border-white/5">
-                                        <div className="flex items-center gap-2 text-main/40">
+                                        <div className="flex items-center gap-2 text-main/60">
                                             <Clock weight="bold" size={14} />
                                             <span className="text-[10px] font-bold uppercase tracking-wider">{t("task_schedule")}</span>
                                         </div>
                                         <span className="text-xs font-mono font-bold text-[#b57dff]">{task.sign_at}</span>
                                     </div>
                                     <div className="flex items-center justify-between p-3 bg-white/2 rounded-xl border border-white/5">
-                                        <div className="flex items-center gap-2 text-main/40">
+                                        <div className="flex items-center gap-2 text-main/60">
                                             <ChatCircleText weight="bold" size={14} />
                                             <span className="text-[10px] font-bold uppercase tracking-wider">{t("task_channels")}</span>
                                         </div>
@@ -341,8 +343,8 @@ export default function SignTasksPage() {
                                         </span>
                                     </div>
                                     <div className="flex items-center justify-between p-3 bg-white/2 rounded-xl border border-white/5">
-                                        <div className="flex items-center gap-2 text-main/40">
-                                            <Clock weight="bold" size={14} />
+                                        <div className="flex items-center gap-2 text-main/60">
+                                            <ArrowClockwise weight="bold" size={14} />
                                             <span className="text-[10px] font-bold uppercase tracking-wider">{t("task_last_run")}</span>
                                         </div>
                                         {task.last_run ? (
@@ -355,7 +357,7 @@ export default function SignTasksPage() {
                                                 })}
                                             </span>
                                         ) : (
-                                            <span className="text-xs font-mono font-bold text-main/30">{t("no_data")}</span>
+                                            <span className="text-xs font-mono font-bold text-main/50">{t("no_data")}</span>
                                         )}
                                     </div>
                                 </div>
@@ -413,11 +415,16 @@ export default function SignTasksPage() {
                         <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/2">
                             <div className="flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-lg bg-[#8a3ffc]/20 flex items-center justify-center text-[#b57dff]">
-                                    <Lightning weight="fill" size={18} />
+                                    {isDone ? <Lightning weight="fill" size={18} /> : <Spinner weight="bold" size={18} className="animate-spin" />}
                                 </div>
-                                <h3 className="font-bold tracking-tight">
-                                    {t("task_run_logs_title").replace("{name}", runningTask)}
-                                </h3>
+                                <div>
+                                    <h3 className="font-bold tracking-tight">
+                                        {t("task_run_logs_title").replace("{name}", runningTask)}
+                                    </h3>
+                                    {!isDone && (
+                                        <span className="text-[10px] font-bold text-[#8a3ffc] animate-pulse uppercase tracking-wider">{t("task_running")}</span>
+                                    )}
+                                </div>
                             </div>
                             {isDone && (
                                 <button
@@ -430,7 +437,7 @@ export default function SignTasksPage() {
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 font-mono text-[11px] leading-relaxed bg-black/20">
                             {runLogs.length === 0 ? (
-                                <div className="flex items-center gap-2 text-main/30 italic">
+                                <div className="flex items-center gap-2 text-main/60 italic">
                                     <Spinner className="animate-spin" size={12} />
                                     {t("logs_waiting")}
                                 </div>
