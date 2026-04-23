@@ -30,7 +30,6 @@ import {
     Trash,
     Spinner,
     Clock,
-    ChatCircleText,
     CheckCircle,
     XCircle,
     Hourglass,
@@ -61,9 +60,10 @@ const DICE_OPTIONS = [
 ] as const;
 
 // Memoized Task Item Component
-const TaskItem = memo(({ task, loading, onEdit, onRun, onViewLogs, onCopy, onDelete, t, language }: {
+const TaskItem = memo(({ task, loading, isRunning, onEdit, onRun, onViewLogs, onCopy, onDelete, t, language }: {
     task: SignTask;
     loading: boolean;
+    isRunning?: boolean;
     onEdit: (task: SignTask) => void;
     onRun: (name: string) => void;
     onViewLogs: (task: SignTask) => void;
@@ -75,10 +75,12 @@ const TaskItem = memo(({ task, loading, onEdit, onRun, onViewLogs, onCopy, onDel
     const copyTaskTitle = language === "zh" ? "\u590D\u5236\u4EFB\u52A1" : "Copy Task";
 
     return (
-        <div className="glass-panel p-4 md:p-5 group hover:border-[#8a3ffc]/30 transition-all">
+        <div className={`glass-panel p-4 md:p-5 group transition-all ${isRunning ? 'border-[#8a3ffc]/50' : 'hover:border-[#8a3ffc]/30'}`}>
             <div className="flex items-start gap-4 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-[#8a3ffc]/10 flex items-center justify-center text-[#b57dff] shrink-0">
-                    <ChatCircleText weight="bold" size={20} />
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-[#b57dff] shrink-0 ${isRunning ? 'bg-[#8a3ffc]/25' : 'bg-[#8a3ffc]/15'}`}>
+                    {isRunning
+                        ? <Spinner weight="bold" size={20} className="animate-spin" />
+                        : <Lightning weight="fill" size={20} />}
                 </div>
                 <div className="min-w-0 flex-1 flex flex-col gap-2">
                     <div className="flex items-center gap-2">
@@ -86,6 +88,11 @@ const TaskItem = memo(({ task, loading, onEdit, onRun, onViewLogs, onCopy, onDel
                         <span className="text-[9px] font-mono text-main/30 bg-white/5 px-1.5 py-0.5 rounded border border-white/5">
                             {task.chats[0]?.chat_id || "-"}
                         </span>
+                        {isRunning && (
+                            <span className="text-[9px] font-bold text-[#8a3ffc] animate-pulse uppercase tracking-wider">
+                                {t("task_running")}
+                            </span>
+                        )}
                     </div>
                     <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1.5 text-main/40">
@@ -324,6 +331,7 @@ export default function AccountTasksContent() {
     const [batchImporting, setBatchImporting] = useState(false);
 
     const [checking, setChecking] = useState(true);
+    const [runningTaskName, setRunningTaskName] = useState<string | null>(null);
     const isZh = language === "zh";
     const taskNamePlaceholder = isZh ? "\u7559\u7A7A\u4F7F\u7528\u9ED8\u8BA4\u540D\u79F0" : "Leave empty to use default name";
     const sendTextLabel = isZh ? "\u53D1\u9001\u6587\u672C\u6D88\u606F" : "Send Text Message";
@@ -521,54 +529,55 @@ export default function AccountTasksContent() {
         }
     };
 
-    const handleDeleteTask = async (taskName: string) => {
+    const handleDeleteTask = useCallback(async (taskName: string) => {
         if (!token) return;
 
-        if (!confirm(t("confirm_delete"))) {
+        if (!confirm(tRef.current("confirm_delete"))) {
             return;
         }
 
         try {
             setLoading(true);
             await deleteSignTask(token, taskName, accountName);
-            // addToast(language === "zh" ? `婵犵數鍋涢顓熸叏妤ｅ喚鏁嬬憸搴ㄥ箞?${taskName} 闂佽娴烽幊鎾诲箟闄囬妵鎰板礃椤旂厧鐎悷婊呭鐢鍩涢弮鈧妵?: `Task ${taskName} deleted`, "success"); // Removed toast as per user request to just refresh
             await loadData(token);
         } catch (err: any) {
             // Only show error if it's NOT a 404 (already deleted/doesn't exist)
             if (err.status !== 404 && !err.message?.includes("not exist")) {
-                addToast(formatErrorMessage("delete_failed", err), "error");
+                addToastRef.current(formatErrorMessage("delete_failed", err), "error");
             } else {
                 await loadData(token); // Refresh anyway if it doesn't exist
             }
         } finally {
             setLoading(false);
         }
-    };
+    }, [token, accountName, loadData, formatErrorMessage]);
 
-    const handleRunTask = async (taskName: string) => {
+    const handleRunTask = useCallback(async (taskName: string) => {
         if (!token) return;
 
         try {
             setLoading(true);
+            setRunningTaskName(taskName);
             const result = await runSignTask(token, taskName, accountName);
 
             if (result.success) {
-                addToast(t("task_run_success").replace("{name}", taskName), "success");
+                addToastRef.current(tRef.current("task_run_success").replace("{name}", taskName), "success");
             } else {
                 if (result.error && result.error.includes("运行中")) {
-                    addToast(language === "zh" ? "该任务正在运行中，任务结束后才能再次执行" : "Task is currently running, please wait until it finishes.", "info");
+                    addToastRef.current(tRef.current("task_running_wait") || (language === "zh" ? "该任务正在运行中，任务结束后才能再次执行" : "Task is currently running, please wait until it finishes."), "info");
                 } else {
-                    addToast(result.error || t("task_run_failed"), "error");
+                    addToastRef.current(result.error || tRef.current("task_run_failed"), "error");
                 }
             }
         } catch (err: any) {
-            addToast(formatErrorMessage("task_run_failed", err), "error");
+            addToastRef.current(formatErrorMessage("task_run_failed", err), "error");
         } finally {
             setLoading(false);
+            setRunningTaskName(null);
         }
-    };
+    }, [token, accountName, language, formatErrorMessage]);
 
-    const handleShowTaskHistory = async (task: SignTask) => {
+    const handleShowTaskHistory = useCallback(async (task: SignTask) => {
         if (!token) return;
         setHistoryTaskName(task.name);
         setHistoryLogs([]);
@@ -577,11 +586,11 @@ export default function AccountTasksContent() {
             const logs = await getSignTaskHistory(token, task.name, accountName, 30);
             setHistoryLogs(logs);
         } catch (err: any) {
-            addToast(formatErrorMessage("logs_fetch_failed", err), "error");
+            addToastRef.current(formatErrorMessage("logs_fetch_failed", err), "error");
         } finally {
             setHistoryLoading(false);
         }
-    };
+    }, [token, accountName, formatErrorMessage]);
 
     const importTaskFromConfig = async (rawConfig: string): Promise<{ ok: boolean; error?: string }> => {
         if (!token) return { ok: false, error: "NO_TOKEN" };
@@ -606,8 +615,12 @@ export default function AccountTasksContent() {
         }
     };
 
-    const handleCopyTask = async (taskName: string) => {
+    const handleCopyTask = useCallback(async (taskName: string) => {
         if (!token) return;
+        const isZhLocal = language === "zh";
+        const successMsg = (name: string) => isZhLocal ? `任务 ${name} 已复制到剪贴板` : `Task ${name} copied to clipboard`;
+        const fallbackMsg = isZhLocal ? "自动复制失败，请在弹窗内手动复制" : "Auto copy failed, please copy manually from dialog";
+        const failedBase = isZhLocal ? "复制任务失败" : "Copy task failed";
 
         try {
             setLoading(true);
@@ -615,20 +628,20 @@ export default function AccountTasksContent() {
             if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
                 try {
                     await navigator.clipboard.writeText(taskConfig);
-                    addToast(copyTaskSuccess(taskName), "success");
+                    addToastRef.current(successMsg(taskName), "success");
                     return;
                 } catch {
-                    addToast(copyTaskFallbackManual, "error");
+                    addToastRef.current(fallbackMsg, "error");
                 }
             }
             setCopyTaskDialog({ taskName, config: taskConfig });
         } catch (err: any) {
-            const message = err?.message ? `${copyTaskFailed}: ${err.message}` : copyTaskFailed;
-            addToast(message, "error");
+            const message = err?.message ? `${failedBase}: ${err.message}` : failedBase;
+            addToastRef.current(message, "error");
         } finally {
             setLoading(false);
         }
-    };
+    }, [token, accountName, language]);
 
     const handleCopyTaskConfig = async () => {
         if (!copyTaskDialog) return;
@@ -865,7 +878,7 @@ export default function AccountTasksContent() {
         });
     };
 
-    const handleEditTask = (task: SignTask) => {
+    const handleEditTask = useCallback((task: SignTask) => {
         setEditingTaskName(task.name);
         setOriginalTaskName(task.name);
         const chat = task.chats[0];
@@ -883,7 +896,7 @@ export default function AccountTasksContent() {
             range_end: task.range_end || "18:00",
         });
         setShowEditDialog(true);
-    };
+    }, []);
 
     const handleSaveEdit = async () => {
         if (!token) return;
@@ -1037,6 +1050,7 @@ export default function AccountTasksContent() {
                                 key={task.name}
                                 task={task}
                                 loading={loading}
+                                isRunning={runningTaskName === task.name}
                                 onEdit={handleEditTask}
                                 onRun={handleRunTask}
                                 onViewLogs={handleShowTaskHistory}

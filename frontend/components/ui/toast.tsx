@@ -80,7 +80,7 @@ export function Toast({ message, type = "info", duration = 4000, onClose }: Toas
             <div className={`p-2 rounded-lg ${getIconBg()}`}>
                 {getIcon()}
             </div>
-            <p className="text-sm font-medium text-white/90 flex-1">{message}</p>
+            <p className="text-sm font-medium text-[var(--text-main)] flex-1">{message}</p>
             <button
                 onClick={() => {
                     setIsExiting(true);
