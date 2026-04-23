@@ -103,6 +103,8 @@ class SignTaskService:
             f"DEBUG: 初始化 SignTaskService, signs_dir={self.signs_dir}, exists={self.signs_dir.exists()}"
         )
         self._active_logs: Dict[tuple[str, str], List[str]] = {}  # (account, task) -> logs
+        self._active_message_events: Dict[tuple[str, str], List[Dict[str, Any]]] = {}
+        self._active_message_event_sequences: Dict[tuple[str, str], int] = {}
         self._active_tasks: Dict[tuple[str, str], bool] = {}  # (account, task) -> running
         self._cleanup_tasks: Dict[tuple[str, str], asyncio.Task] = {}
         self._tasks_cache = None  # 内存缓存
@@ -112,6 +114,14 @@ class SignTaskService:
         self._history_max_entries = runtime_config.history_max_entries
         self._history_max_flow_lines = runtime_config.history_max_flow_lines
         self._history_max_line_chars = runtime_config.history_max_line_chars
+        self._history_max_message_events = getattr(
+            runtime_config, "history_max_message_events", 100
+        )
+        self._active_message_event_buffer_limit = (
+            self._history_max_message_events
+            if self._history_max_message_events > 0
+            else 100
+        )
         self._cleanup_old_logs()
 
     @staticmethod
@@ -182,6 +192,84 @@ class SignTaskService:
             trimmed.append(text)
         return trimmed, total > len(trimmed), total
 
+    @staticmethod
+    def _normalize_message_sender(sender: Any) -> Dict[str, Any]:
+        if not isinstance(sender, dict):
+            return {"id": None, "username": "", "display_name": ""}
+        return {
+            "id": sender.get("id"),
+            "username": str(sender.get("username", "") or ""),
+            "display_name": str(sender.get("display_name", "") or ""),
+        }
+
+    def _normalize_message_event(self, event: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(event, dict):
+            return None
+        return {
+            "event_id": str(event.get("event_id", "") or ""),
+            "event_type": str(event.get("event_type", "") or ""),
+            "event_time": str(event.get("event_time", "") or ""),
+            "chat_id": event.get("chat_id"),
+            "chat_title": str(event.get("chat_title", "") or ""),
+            "chat_username": str(event.get("chat_username", "") or ""),
+            "sender": self._normalize_message_sender(event.get("sender")),
+            "text": str(event.get("text", "") or ""),
+            "caption": str(event.get("caption", "") or ""),
+            "summary": str(event.get("summary", "") or ""),
+        }
+
+    def _normalize_message_events(
+        self, message_events: Optional[List[Dict[str, Any]]]
+    ) -> List[Dict[str, Any]]:
+        if not isinstance(message_events, list):
+            return []
+        if self._history_max_message_events <= 0:
+            return []
+        normalized = []
+        for event in message_events[-self._history_max_message_events :]:
+            normalized_event = self._normalize_message_event(event)
+            if normalized_event is not None:
+                normalized.append(normalized_event)
+        return normalized
+
+    @staticmethod
+    def _public_message_event(event: Dict[str, Any]) -> Dict[str, Any]:
+        public_event = dict(event)
+        public_event.pop("_sequence", None)
+        return public_event
+
+    def _get_active_message_event_state(
+        self, task_name: str, account_name: Optional[str] = None
+    ) -> tuple[List[Dict[str, Any]], int]:
+        if account_name:
+            task_key = self._task_key(account_name, task_name)
+            return (
+                self._active_message_events.get(task_key, []),
+                self._active_message_event_sequences.get(task_key, 0),
+            )
+        for key, events in self._active_message_events.items():
+            if key[1] == task_name:
+                return events, self._active_message_event_sequences.get(key, 0)
+        return [], 0
+
+    def _latest_message_summary(
+        self, message_events: Optional[List[Dict[str, Any]]]
+    ) -> str:
+        if not isinstance(message_events, list):
+            return ""
+        for event in reversed(message_events):
+            if not isinstance(event, dict):
+                continue
+            summary = str(event.get("summary", "") or "").strip()
+            if not summary:
+                summary = (
+                    str(event.get("text", "") or "").strip()
+                    or str(event.get("caption", "") or "").strip()
+                )
+            if summary:
+                return summary[:200] if len(summary) <= 200 else summary[:197] + "..."
+        return ""
+
     def _load_history_entries(
         self, task_name: str, account_name: str = ""
     ) -> List[Dict[str, Any]]:
@@ -236,6 +324,7 @@ class SignTaskService:
             flow_logs = item.get("flow_logs")
             if not isinstance(flow_logs, list):
                 flow_logs = []
+            message_events = self._normalize_message_events(item.get("message_events"))
 
             result.append(
                 {
@@ -245,6 +334,7 @@ class SignTaskService:
                     "flow_logs": [str(line) for line in flow_logs],
                     "flow_truncated": bool(item.get("flow_truncated", False)),
                     "flow_line_count": int(item.get("flow_line_count", len(flow_logs))),
+                    "message_events": message_events,
                 }
             )
         return result
@@ -441,6 +531,7 @@ class SignTaskService:
         message: str = "",
         account_name: str = "",
         flow_logs: Optional[List[str]] = None,
+        message_events: Optional[List[Dict[str, Any]]] = None,
     ):
         """保存任务执行历史 (保留列表)"""
         from datetime import datetime
@@ -449,6 +540,7 @@ class SignTaskService:
         normalized_logs, flow_truncated, flow_line_count = self._normalize_flow_logs(
             flow_logs
         )
+        normalized_message_events = self._normalize_message_events(message_events)
 
         new_entry = {
             "time": datetime.now().isoformat(),
@@ -458,6 +550,7 @@ class SignTaskService:
             "flow_logs": normalized_logs,
             "flow_truncated": flow_truncated,
             "flow_line_count": flow_line_count,
+            "message_events": normalized_message_events,
         }
 
         history = []
@@ -1048,7 +1141,6 @@ class SignTaskService:
 
         # 获取 session 文件路径
         from backend.core.config import get_settings
-        from backend.services.config import get_config_service
 
         settings = get_settings()
         session_dir = settings.resolve_session_dir()
@@ -1233,6 +1325,51 @@ class SignTaskService:
             return self._active_logs.get(key, [])
         return []
 
+    def append_active_message_event(
+        self, account_name: str, task_name: str, event: Dict[str, Any]
+    ) -> None:
+        normalized_event = self._normalize_message_event(event)
+        if normalized_event is None:
+            return
+        task_key = self._task_key(account_name, task_name)
+        next_sequence = self._active_message_event_sequences.get(task_key, 0) + 1
+        self._active_message_event_sequences[task_key] = next_sequence
+        events = self._active_message_events.setdefault(task_key, [])
+        active_event = dict(normalized_event)
+        active_event["_sequence"] = next_sequence
+        events.append(active_event)
+        if (
+            self._active_message_event_buffer_limit > 0
+            and len(events) > self._active_message_event_buffer_limit
+        ):
+            del events[:-self._active_message_event_buffer_limit]
+
+    def get_active_message_events(
+        self, task_name: str, account_name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        events, _latest_sequence = self._get_active_message_event_state(
+            task_name, account_name=account_name
+        )
+        return [self._public_message_event(event) for event in events]
+
+    def get_active_message_events_since(
+        self,
+        task_name: str,
+        account_name: Optional[str] = None,
+        after_sequence: int = 0,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        events, latest_sequence = self._get_active_message_event_state(
+            task_name, account_name=account_name
+        )
+        if after_sequence < 0:
+            after_sequence = 0
+        new_events = [
+            self._public_message_event(event)
+            for event in events
+            if int(event.get("_sequence", 0) or 0) > after_sequence
+        ]
+        return new_events, latest_sequence
+
     def is_task_running(self, task_name: str, account_name: Optional[str] = None) -> bool:
         """检查任务是否正在运行"""
         if account_name:
@@ -1261,6 +1398,8 @@ class SignTaskService:
         task_key = self._task_key(account_name, task_name)
         self._active_tasks[task_key] = True
         self._active_logs[task_key] = []
+        self._active_message_events[task_key] = []
+        self._active_message_event_sequences[task_key] = 0
 
         # 获取 logger 实例
         tg_logger = logging.getLogger("tg-signer")
@@ -1289,9 +1428,6 @@ class SignTaskService:
                 self._active_logs[task_key].append(
                     f"开始执行任务: {task_name} (账号: {account_name})"
                 )
-
-                # 配置 API 凭据
-                from backend.services.config import get_config_service
 
                 api_runtime = get_telegram_api_runtime_config()
                 api_id = api_runtime.api_id
@@ -1335,6 +1471,9 @@ class SignTaskService:
 
                 # 实例化 UserSigner (使用 BackendUserSigner)
                 # 注意: UserSigner 内部会使用 get_client 复用 client
+                async def handle_message_event(event: Dict[str, Any]) -> None:
+                    self.append_active_message_event(account_name, task_name, event)
+
                 signer = BackendUserSigner(
                     task_name=task_name,
                     session_dir=str(session_dir),
@@ -1346,6 +1485,7 @@ class SignTaskService:
                     api_id=api_id,
                     api_hash=api_hash,
                     no_updates=signer_no_updates,
+                    message_event_callback=handle_message_event,
                 )
 
                 # 执行任务（数据库锁冲突时重试）
@@ -1386,35 +1526,38 @@ class SignTaskService:
 
             # 保存执行记录
             final_logs = list(self._active_logs.get(task_key, []))
+            final_message_events = list(self._active_message_events.get(task_key, []))
             output_str = "\n".join(final_logs)
 
             last_reply = ""
             if success:
-                for line in reversed(final_logs):
-                    if "收到来自「" in line and ("」的消息:" in line or "」对消息的更新，消息:" in line):
-                        try:
-                            splitter = "」的消息:" if "」的消息:" in line else "」对消息的更新，消息:"
-                            reply_part = line.split(splitter, 1)[-1].strip()
-                            if reply_part.startswith("Message:"):
-                                reply_part = reply_part[len("Message:"):].strip()
+                last_reply = self._latest_message_summary(final_message_events)
+                if not last_reply:
+                    for line in reversed(final_logs):
+                        if "收到来自「" in line and ("」的消息:" in line or "」对消息的更新，消息:" in line):
+                            try:
+                                splitter = "」的消息:" if "」的消息:" in line else "」对消息的更新，消息:"
+                                reply_part = line.split(splitter, 1)[-1].strip()
+                                if reply_part.startswith("Message:"):
+                                    reply_part = reply_part[len("Message:"):].strip()
 
-                            if "text: " in reply_part:
-                                text_content = reply_part.split("text: ", 1)[-1].split("\n")[0].strip()
-                                if text_content:
-                                    last_reply = text_content
-                                elif "图片: " in reply_part:
-                                    last_reply = "[图片] " + reply_part.split("图片: ", 1)[-1].split("\n")[0].strip()
+                                if "text: " in reply_part:
+                                    text_content = reply_part.split("text: ", 1)[-1].split("\n")[0].strip()
+                                    if text_content:
+                                        last_reply = text_content
+                                    elif "图片: " in reply_part:
+                                        last_reply = "[图片] " + reply_part.split("图片: ", 1)[-1].split("\n")[0].strip()
+                                    else:
+                                        last_reply = reply_part.replace("\n", " ").strip()
                                 else:
                                     last_reply = reply_part.replace("\n", " ").strip()
-                            else:
-                                last_reply = reply_part.replace("\n", " ").strip()
 
-                            if len(last_reply) > 200:
-                                last_reply = last_reply[:197] + "..."
-                        except Exception:
-                            pass
-                        if last_reply:
-                            break
+                                if len(last_reply) > 200:
+                                    last_reply = last_reply[:197] + "..."
+                            except Exception:
+                                pass
+                            if last_reply:
+                                break
 
             msg = error_msg if not success else last_reply
             self._save_run_info(
@@ -1423,6 +1566,7 @@ class SignTaskService:
                 msg,
                 account_name,
                 flow_logs=final_logs,
+                message_events=final_message_events,
             )
 
             # 延迟清理日志（同一 task_key 仅保留一个 cleanup 协程）
@@ -1435,6 +1579,8 @@ class SignTaskService:
                     await asyncio.sleep(60)
                     if not self._active_tasks.get(task_key):
                         self._active_logs.pop(task_key, None)
+                        self._active_message_events.pop(task_key, None)
+                        self._active_message_event_sequences.pop(task_key, None)
                 finally:
                     self._cleanup_tasks.pop(task_key, None)
 

@@ -9,9 +9,12 @@ import {
     deleteSignTask,
     runSignTask,
     getSignTaskHistory,
+    getSignTaskMonitorWebSocketUrl,
     listAccounts,
     SignTask,
     SignTaskHistoryItem,
+    SignTaskMessageEvent,
+    SignTaskMonitorStreamEvent,
     AccountInfo,
 } from "../../../lib/api";
 import {
@@ -41,12 +44,17 @@ export default function SignTasksPage() {
     const [accounts, setAccounts] = useState<AccountInfo[]>([]);
     const [loading, setLoading] = useState(false);
     const [checking, setChecking] = useState(true);
-    const [runningTask, setRunningTask] = useState<string | null>(null);
+    const [runningTask, setRunningTask] = useState<{ name: string; accountName: string } | null>(null);
     const [runLogs, setRunLogs] = useState<string[]>([]);
+    const [runMessages, setRunMessages] = useState<SignTaskMessageEvent[]>([]);
+    const [runMonitorTab, setRunMonitorTab] = useState<"logs" | "messages">("logs");
+    const [runResult, setRunResult] = useState<{ success: boolean; output: string; error: string } | null>(null);
     const [isDone, setIsDone] = useState(false);
     const [historyTask, setHistoryTask] = useState<SignTask | null>(null);
     const [historyLogs, setHistoryLogs] = useState<SignTaskHistoryItem[]>([]);
     const [historyLoading, setHistoryLoading] = useState(false);
+    const runSocketRef = useRef<WebSocket | null>(null);
+    const runResultRef = useRef<{ success: boolean; output: string; error: string } | null>(null);
 
     const addToastRef = useRef(addToast);
     const tRef = useRef(t);
@@ -60,6 +68,20 @@ export default function SignTasksPage() {
         const base = tRef.current ? tRef.current(key) : key;
         const code = err?.code;
         return code ? `${base} (${code})` : base;
+    }, []);
+
+    const closeRunMonitor = useCallback(() => {
+        if (runSocketRef.current) {
+            runSocketRef.current.close();
+            runSocketRef.current = null;
+        }
+        setRunningTask(null);
+        setRunLogs([]);
+        setRunMessages([]);
+        setRunResult(null);
+        runResultRef.current = null;
+        setRunMonitorTab("logs");
+        setIsDone(false);
     }, []);
 
     const loadData = useCallback(async (tokenStr: string) => {
@@ -92,6 +114,15 @@ export default function SignTasksPage() {
         loadData(tokenStr);
     }, [loadData]);
 
+    useEffect(() => {
+        return () => {
+            if (runSocketRef.current) {
+                runSocketRef.current.close();
+                runSocketRef.current = null;
+            }
+        };
+    }, []);
+
     const handleDelete = async (task: SignTask) => {
         if (!token) return;
 
@@ -111,35 +142,50 @@ export default function SignTasksPage() {
         }
     };
 
-    const handleRun = async (taskName: string) => {
+    const handleRun = async (task: SignTask) => {
         if (!token) return;
 
-        const accountName = prompt(t("account_name_prompt"));
+        const accountName = task.account_name || prompt(t("account_name_prompt"));
         if (!accountName) return;
 
         try {
             setLoading(true);
-            setRunningTask(taskName);
+            setRunningTask({ name: task.name, accountName });
             setRunLogs([]);
+            setRunMessages([]);
+            setRunResult(null);
+            runResultRef.current = null;
+            setRunMonitorTab("logs");
             setIsDone(false);
 
-            // 建立 WebSocket 连接
-            const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-            const host = window.location.host;
-            // 注意：这里需要确保后端地址正确，如果是在开发环境（localhost:3000 -> localhost:8000）可能需要处理
-            const wsParams = new URLSearchParams({
-                token,
-                account_name: accountName,
-            });
-            const wsUrl = `${protocol}//${host}/api/sign-tasks/ws/${taskName}?${wsParams.toString()}`;
-            const ws = new WebSocket(wsUrl);
+            if (runSocketRef.current) {
+                runSocketRef.current.close();
+            }
+            const ws = new WebSocket(
+                getSignTaskMonitorWebSocketUrl(token, task.name, accountName)
+            );
+            runSocketRef.current = ws;
 
             ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
+                const data = JSON.parse(event.data) as SignTaskMonitorStreamEvent;
                 if (data.type === "logs") {
                     setRunLogs(prev => [...prev, ...data.data]);
+                } else if (data.type === "message_events") {
+                    setRunMessages(prev => [...prev, ...data.data]);
                 } else if (data.type === "done") {
                     setIsDone(true);
+                    if (runSocketRef.current === ws) {
+                        runSocketRef.current = null;
+                    }
+                }
+            };
+
+            ws.onclose = () => {
+                if (runSocketRef.current === ws) {
+                    runSocketRef.current = null;
+                    if (runResultRef.current) {
+                        setIsDone(true);
+                    }
                 }
             };
 
@@ -147,7 +193,9 @@ export default function SignTasksPage() {
                 console.error("WebSocket error:", err);
             };
 
-            const result = await runSignTask(token, taskName, accountName);
+            const result = await runSignTask(token, task.name, accountName);
+            setRunResult(result);
+            runResultRef.current = result;
 
             if (!result.success) {
                 if (result.error && result.error.includes("运行中")) {
@@ -157,11 +205,18 @@ export default function SignTasksPage() {
                     setIsDone(true);
                 }
             } else {
-                addToast(t("task_run_success").replace("{name}", taskName), "success");
+                addToast(t("task_run_success").replace("{name}", task.name), "success");
+                if (!runSocketRef.current) {
+                    setIsDone(true);
+                }
             }
         } catch (err: any) {
             addToast(formatErrorMessage("task_run_failed", err), "error");
-            setRunningTask(null);
+            if (runSocketRef.current) {
+                runSocketRef.current.close();
+                runSocketRef.current = null;
+            }
+            setIsDone(true);
         } finally {
             setLoading(false);
         }
@@ -181,6 +236,31 @@ export default function SignTasksPage() {
             setHistoryLoading(false);
         }
     };
+
+    const describeMessageEvent = (event: SignTaskMessageEvent) => {
+        const senderName = event.sender?.display_name || event.sender?.username || event.sender?.id || t("unknown_sender");
+        const chatName = event.chat_title || event.chat_username || event.chat_id || t("unknown_chat");
+        const body = event.text || event.caption || event.summary || t("task_monitor_no_messages");
+        const typeLabel = event.event_type === "message_edited"
+            ? t("task_message_event_edited")
+            : t("task_message_event_received");
+
+        return {
+            senderName: String(senderName),
+            chatName: String(chatName),
+            body,
+            typeLabel,
+        };
+    };
+
+    const latestRunSummary = (() => {
+        const lastMessage = runMessages[runMessages.length - 1];
+        if (lastMessage?.summary) return lastMessage.summary;
+        if (lastMessage?.text) return lastMessage.text;
+        if (runResult?.error) return runResult.error;
+        if (runResult?.success && runLogs.length > 0) return runLogs[runLogs.length - 1];
+        return t("logs_waiting");
+    })();
 
     if (!token || checking) {
         return null;
@@ -275,7 +355,7 @@ export default function SignTasksPage() {
                                         </div>
                                         <div className="w-14 flex flex-col items-center gap-2 pt-[2px]">
                                             <button
-                                                onClick={() => handleRun(task.name)}
+                                                onClick={() => handleRun(task)}
                                                 disabled={loading}
                                                 className="action-btn !w-11 !h-11 !text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-20 disabled:cursor-not-allowed"
                                                 title={t("run")}
@@ -365,7 +445,7 @@ export default function SignTasksPage() {
                                 <div className="mt-auto flex items-center justify-between bg-black/10 -mx-6 -mb-6 p-4 border-t border-white/5">
                                     <div className="flex items-center gap-2">
                                         <button
-                                            onClick={() => handleRun(task.name)}
+                                            onClick={() => handleRun(task)}
                                             disabled={loading}
                                             className="action-btn !text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-20 disabled:cursor-not-allowed"
                                             title={t("run")}
@@ -408,10 +488,10 @@ export default function SignTasksPage() {
 
             <ToastContainer toasts={toasts} removeToast={removeToast} />
 
-            {/* 运行日志 Modal */}
+            {/* 运行监控 Modal */}
             {runningTask && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm animate-fade-in">
-                    <div className="glass-panel w-full max-w-2xl h-[500px] flex flex-col shadow-2xl border border-white/10 overflow-hidden animate-zoom-in">
+                    <div className="glass-panel w-full max-w-5xl h-[78vh] flex flex-col shadow-2xl border border-white/10 overflow-hidden animate-zoom-in">
                         <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/2">
                             <div className="flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-lg bg-[#8a3ffc]/20 flex items-center justify-center text-[#b57dff]">
@@ -419,58 +499,108 @@ export default function SignTasksPage() {
                                 </div>
                                 <div>
                                     <h3 className="font-bold tracking-tight">
-                                        {t("task_run_logs_title").replace("{name}", runningTask)}
+                                        {t("task_monitor_title").replace("{name}", runningTask.name)}
                                     </h3>
-                                    {!isDone && (
-                                        <span className="text-[10px] font-bold text-[#8a3ffc] animate-pulse uppercase tracking-wider">{t("task_running")}</span>
-                                    )}
+                                    <span className={`text-[10px] font-bold uppercase tracking-wider ${isDone ? "text-emerald-400" : "text-[#8a3ffc] animate-pulse"}`}>
+                                        {isDone ? t("task_done") : t("task_running")}
+                                    </span>
                                 </div>
                             </div>
-                            {isDone && (
+                            <button
+                                onClick={closeRunMonitor}
+                                className="action-btn !w-8 !h-8 hover:bg-white/10"
+                            >
+                                <X weight="bold" />
+                            </button>
+                        </div>
+                        <div className="p-4 border-b border-white/5 bg-black/10">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                                <div className="rounded-xl border border-white/5 bg-white/5 p-3">
+                                    <div className="text-main/40 uppercase tracking-wider mb-1">{t("task_monitor_status")}</div>
+                                    <div className={`font-bold ${runResult && !runResult.success ? "text-rose-400" : isDone ? "text-emerald-400" : "text-[#b57dff]"}`}>
+                                        {runResult && !runResult.success ? t("failure") : isDone ? t("success") : t("task_running")}
+                                    </div>
+                                </div>
+                                <div className="rounded-xl border border-white/5 bg-white/5 p-3">
+                                    <div className="text-main/40 uppercase tracking-wider mb-1">{t("associated_account")}</div>
+                                    <div className="font-mono text-main/80 break-all">{runningTask.accountName}</div>
+                                </div>
+                                <div className="rounded-xl border border-white/5 bg-white/5 p-3">
+                                    <div className="text-main/40 uppercase tracking-wider mb-1">{t("task_monitor_summary")}</div>
+                                    <div className="text-main/80 break-all">{latestRunSummary}</div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 mt-4">
                                 <button
-                                    onClick={() => setRunningTask(null)}
-                                    className="action-btn !w-8 !h-8 hover:bg-white/10"
+                                    onClick={() => setRunMonitorTab("logs")}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${runMonitorTab === "logs" ? "bg-[#8a3ffc] text-white" : "bg-white/5 text-main/60 hover:bg-white/10"}`}
                                 >
-                                    <X weight="bold" />
+                                    {t("logs")}
                                 </button>
-                            )}
+                                <button
+                                    onClick={() => setRunMonitorTab("messages")}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${runMonitorTab === "messages" ? "bg-[#8a3ffc] text-white" : "bg-white/5 text-main/60 hover:bg-white/10"}`}
+                                >
+                                    {t("task_monitor_messages_tab")} ({runMessages.length})
+                                </button>
+                            </div>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 font-mono text-[11px] leading-relaxed bg-black/20">
-                            {runLogs.length === 0 ? (
-                                <div className="flex items-center gap-2 text-main/60 italic">
-                                    <Spinner className="animate-spin" size={12} />
-                                    {t("logs_waiting")}
-                                </div>
+                            {runMonitorTab === "logs" ? (
+                                runLogs.length === 0 ? (
+                                    <div className="flex items-center gap-2 text-main/60 italic">
+                                        <Spinner className="animate-spin" size={12} />
+                                        {t("logs_waiting")}
+                                    </div>
+                                ) : (
+                                    <div className="space-y-1">
+                                        {runLogs.map((log, i) => (
+                                            <div key={i} className="text-main/80 flex gap-2">
+                                                <span className="text-main/20 select-none w-6 text-right">{(i + 1).toString().padStart(2, '0')}</span>
+                                                <span className="break-all">{log}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )
+                            ) : runMessages.length === 0 ? (
+                                <div className="text-main/40 italic">{t("task_monitor_no_messages")}</div>
                             ) : (
-                                <div className="space-y-1">
-                                    {runLogs.map((log, i) => (
-                                        <div key={i} className="text-main/80 flex gap-2">
-                                            <span className="text-main/20 select-none w-6 text-right">{(i + 1).toString().padStart(2, '0')}</span>
-                                            <span className="break-all">{log}</span>
-                                        </div>
-                                    ))}
-                                    {!isDone && (
-                                        <div className="flex items-center gap-2 text-[#8a3ffc] mt-2 italic animate-pulse">
-                                            <Spinner className="animate-spin" size={12} />
-                                            {t("task_running")}
-                                        </div>
-                                    )}
-                                    {isDone && (
-                                        <div className="text-emerald-400 mt-4 font-bold border-t border-emerald-500/20 pt-4 flex items-center gap-2">
-                                            <Lightning weight="fill" />
-                                            {t("task_done")}
-                                        </div>
-                                    )}
+                                <div className="space-y-3">
+                                    {runMessages.map((event, index) => {
+                                        const message = describeMessageEvent(event);
+                                        return (
+                                            <div
+                                                key={event.event_id || `${event.event_time}-${index}`}
+                                                className="rounded-xl border border-white/5 bg-white/5 p-3"
+                                            >
+                                                <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="px-2 py-0.5 rounded-full bg-[#8a3ffc]/15 text-[#c59bff] border border-[#8a3ffc]/20">
+                                                            {message.typeLabel}
+                                                        </span>
+                                                        <span className="text-main/30">
+                                                            {event.event_time ? new Date(event.event_time).toLocaleString(language === "zh" ? "zh-CN" : "en-US") : t("no_data")}
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-main/50">
+                                                        {message.senderName} → {message.chatName}
+                                                    </span>
+                                                </div>
+                                                <div className="text-main/85 break-words whitespace-pre-wrap">
+                                                    {message.body}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
                         <div className="p-4 border-t border-white/5 bg-white/2 flex justify-end">
                             <button
-                                onClick={() => setRunningTask(null)}
-                                disabled={!isDone}
-                                className={`px-6 py-2 rounded-xl font-bold text-xs transition-all ${isDone ? 'btn-gradient shadow-lg' : 'bg-white/5 text-main/20 cursor-not-allowed'}`}
+                                onClick={closeRunMonitor}
+                                className="px-6 py-2 rounded-xl font-bold text-xs transition-all btn-gradient shadow-lg"
                             >
-                                {isDone ? t("close") : t("task_executing")}
+                                {t("close")}
                             </button>
                         </div>
                     </div>
@@ -507,37 +637,84 @@ export default function SignTasksPage() {
                             ) : (
                                 <div className="space-y-4">
                                     {historyLogs.map((log, i) => (
-                                        <div key={`${log.time}-${i}`} className="rounded-xl border border-white/5 bg-white/5 overflow-hidden">
-                                            <div className="flex justify-between items-center px-3 py-2 border-b border-white/5 text-[10px]">
-                                                <span className="text-main/30">
-                                                    {new Date(log.time).toLocaleString(language === "zh" ? "zh-CN" : "en-US")}
-                                                </span>
-                                                <span className={log.success ? "text-emerald-400" : "text-rose-400"}>
-                                                    {log.success ? t("success") : t("failure")}
-                                                </span>
-                                            </div>
-                                            <div className="p-3 space-y-1">
-                                                {log.flow_logs && log.flow_logs.length > 0 ? (
-                                                    log.flow_logs.map((line, lineIndex) => (
-                                                        <div key={lineIndex} className="text-main/80 flex gap-2">
-                                                            <span className="text-main/20 select-none w-6 text-right">
-                                                                {(lineIndex + 1).toString().padStart(2, "0")}
-                                                            </span>
-                                                            <span className="break-all">{line}</span>
-                                                        </div>
-                                                    ))
-                                                ) : (
-                                                    <div className="text-main/50">
+                                        <details key={`${log.time}-${i}`} className="rounded-xl border border-white/5 bg-white/5 overflow-hidden" open={i === 0}>
+                                            <summary className="flex flex-wrap justify-between items-center gap-3 px-4 py-3 cursor-pointer list-none">
+                                                <div className="min-w-0">
+                                                    <div className="text-main/30 text-[10px]">
+                                                        {new Date(log.time).toLocaleString(language === "zh" ? "zh-CN" : "en-US")}
+                                                    </div>
+                                                    <div className="text-main/80 break-all mt-1">
                                                         {log.message || t("task_history_no_flow")}
                                                     </div>
-                                                )}
-                                                {log.flow_truncated && (
-                                                    <div className="text-[10px] text-amber-400/90 mt-2">
-                                                        {t("task_history_truncated").replace("{count}", String(log.flow_line_count || 0))}
+                                                </div>
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${log.success ? "text-emerald-400 border-emerald-500/20 bg-emerald-500/10" : "text-rose-400 border-rose-500/20 bg-rose-500/10"}`}>
+                                                    {log.success ? t("success") : t("failure")}
+                                                </span>
+                                            </summary>
+                                            <div className="px-4 pb-4 grid grid-cols-1 lg:grid-cols-2 gap-4 border-t border-white/5">
+                                                <div className="pt-4 space-y-3">
+                                                    <div className="text-[10px] uppercase tracking-wider text-main/30">
+                                                        {t("task_monitor_messages_tab")}
                                                     </div>
-                                                )}
+                                                    {log.message_events && log.message_events.length > 0 ? (
+                                                        <div className="space-y-3">
+                                                            {log.message_events.map((event, eventIndex) => {
+                                                                const message = describeMessageEvent(event);
+                                                                return (
+                                                                    <div
+                                                                        key={event.event_id || `${log.time}-${eventIndex}`}
+                                                                        className="rounded-xl border border-white/5 bg-black/20 p-3"
+                                                                    >
+                                                                        <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] mb-2">
+                                                                            <span className="px-2 py-0.5 rounded-full bg-[#8a3ffc]/15 text-[#c59bff] border border-[#8a3ffc]/20">
+                                                                                {message.typeLabel}
+                                                                            </span>
+                                                                            <span className="text-main/30">
+                                                                                {event.event_time ? new Date(event.event_time).toLocaleString(language === "zh" ? "zh-CN" : "en-US") : t("no_data")}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="text-main/50 mb-2">
+                                                                            {message.senderName} → {message.chatName}
+                                                                        </div>
+                                                                        <div className="text-main/85 break-words whitespace-pre-wrap">
+                                                                            {message.body}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-main/40 italic">{t("task_history_no_messages")}</div>
+                                                    )}
+                                                </div>
+                                                <div className="pt-4 space-y-3">
+                                                    <div className="text-[10px] uppercase tracking-wider text-main/30">
+                                                        {t("logs")}
+                                                    </div>
+                                                    {log.flow_logs && log.flow_logs.length > 0 ? (
+                                                        <div className="space-y-1">
+                                                            {log.flow_logs.map((line, lineIndex) => (
+                                                                <div key={lineIndex} className="text-main/80 flex gap-2">
+                                                                    <span className="text-main/20 select-none w-6 text-right">
+                                                                        {(lineIndex + 1).toString().padStart(2, "0")}
+                                                                    </span>
+                                                                    <span className="break-all">{line}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-main/50">
+                                                            {log.message || t("task_history_no_flow")}
+                                                        </div>
+                                                    )}
+                                                    {log.flow_truncated && (
+                                                        <div className="text-[10px] text-amber-400/90 mt-2">
+                                                            {t("task_history_truncated").replace("{count}", String(log.flow_line_count || 0))}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
+                                        </details>
                                     ))}
                                 </div>
                             )}

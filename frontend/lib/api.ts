@@ -604,6 +604,41 @@ export interface LastRunInfo {
   message?: string;
 }
 
+export interface SignTaskMessageSender {
+  id?: number | null;
+  username?: string;
+  display_name?: string;
+}
+
+export interface SignTaskMessageEvent {
+  event_id: string;
+  event_type: string;
+  event_time: string;
+  chat_id?: number | null;
+  chat_title?: string;
+  chat_username?: string;
+  sender?: SignTaskMessageSender;
+  text?: string;
+  caption?: string;
+  summary?: string;
+}
+
+export type SignTaskMonitorStreamEvent =
+  | {
+      type: "logs";
+      data: string[];
+      is_running: boolean;
+    }
+  | {
+      type: "message_events";
+      data: SignTaskMessageEvent[];
+      is_running: boolean;
+    }
+  | {
+      type: "done";
+      is_running: boolean;
+    };
+
 export interface SignTask {
   name: string;
   account_name: string;
@@ -693,6 +728,31 @@ export const runSignTask = (token: string, name: string, accountName: string) =>
     method: "POST",
   }, token);
 
+export const getSignTaskMonitorWebSocketUrl = (
+  token: string,
+  name: string,
+  accountName: string
+) => {
+  const params = new URLSearchParams({
+    token,
+    account_name: accountName,
+  });
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE || "/api";
+  const encodedName = encodeURIComponent(name);
+
+  if (apiBase.startsWith("http://") || apiBase.startsWith("https://")) {
+    const url = new URL(apiBase);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.pathname = `${url.pathname.replace(/\/$/, "")}/sign-tasks/ws/${encodedName}`;
+    url.search = params.toString();
+    return url.toString();
+  }
+
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const normalizedBase = apiBase.replace(/\/$/, "");
+  return `${protocol}//${window.location.host}${normalizedBase}/sign-tasks/ws/${encodedName}?${params.toString()}`;
+};
+
 export const getAccountChats = (token: string, accountName: string, forceRefresh?: boolean) =>
   request<ChatInfo[]>(`/sign-tasks/chats/${accountName}${forceRefresh ? '?force_refresh=true' : ''}`, {}, token);
 
@@ -724,6 +784,7 @@ export interface SignTaskHistoryItem {
   flow_logs?: string[];
   flow_truncated?: boolean;
   flow_line_count?: number;
+  message_events?: SignTaskMessageEvent[];
 }
 
 export const getSignTaskHistory = (
@@ -741,4 +802,3 @@ export const getSignTaskHistory = (
     token
   );
 };
-

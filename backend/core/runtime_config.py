@@ -53,6 +53,7 @@ class SignTaskRuntimeConfig:
     history_max_entries: int
     history_max_flow_lines: int
     history_max_line_chars: int
+    history_max_message_events: int
 
 
 @dataclass(frozen=True)
@@ -128,6 +129,9 @@ def get_sign_task_runtime_config() -> SignTaskRuntimeConfig:
         ),
         history_max_line_chars=_read_positive_int_env(
             "SIGN_TASK_HISTORY_MAX_LINE_CHARS", 500, 80
+        ),
+        history_max_message_events=_read_positive_int_env(
+            "SIGN_TASK_HISTORY_MAX_MESSAGE_EVENTS", 100, 0
         ),
     )
 

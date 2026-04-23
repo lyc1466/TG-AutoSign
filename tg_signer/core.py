@@ -11,7 +11,9 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from datetime import time as dt_time
 from typing import (
+    Any,
     BinaryIO,
+    Callable,
     Generic,
     List,
     Optional,
@@ -55,12 +57,12 @@ from tg_signer.config import (
     SendTextAction,
     SignChatV3,
     SignConfigV3,
-    SignConfigV4,
     SupportAction,
     UDPForward,
 )
 
 from .ai_tools import AITools, OpenAIConfigManager
+from .message_utils import message_sender_label
 from .notification.server_chan import sc_send
 from .utils import UserInput, print_to_user
 
@@ -227,7 +229,8 @@ class Client(BaseClient):
                             try:
                                 if self.is_connected:
                                     await self.stop()
-                            except: pass
+                            except Exception:
+                                pass
 
                             wait_time = (attempt + 1) * 2
                             logger.warning(f"Database locked when starting client {self.name}, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
@@ -807,6 +810,12 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
     cfg_cls = SignConfigV3
     context: UserSignerWorkerContext
 
+    def __init__(self, *args, message_event_callback=None, **kwargs):
+        self._message_event_callback: Optional[Callable[[dict[str, Any]], Any]] = (
+            message_event_callback
+        )
+        super().__init__(*args, **kwargs)
+
     def ensure_ctx(self) -> UserSignerWorkerContext:
         return UserSignerWorkerContext(
             waiter=Waiter(),
@@ -814,6 +823,65 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
             chat_messages=defaultdict(dict),
             waiting_message=None,
         )
+
+    @staticmethod
+    def _message_event_summary(message: Message) -> str:
+        summary = message.text or message.caption or readable_message(message)
+        summary = re.sub(r"\s+", " ", summary).strip()
+        if len(summary) > 200:
+            summary = summary[:197] + "..."
+        return summary
+
+    @staticmethod
+    def _message_event_time(message: Message) -> str:
+        event_time = getattr(message, "edit_date", None) or getattr(message, "date", None)
+        if isinstance(event_time, datetime):
+            return event_time.isoformat()
+        return ""
+
+    def build_message_event(self, message: Message, event_type: str) -> dict[str, Any]:
+        sender = getattr(message, "from_user", None)
+        sender_chat = getattr(message, "sender_chat", None)
+        sender_id = getattr(sender, "id", None) or getattr(sender_chat, "id", None)
+        sender_username = getattr(sender, "username", None) or getattr(
+            sender_chat, "username", None
+        )
+        sender_name = (
+            getattr(sender, "first_name", None)
+            or getattr(sender_chat, "title", None)
+            or sender_username
+            or (str(sender_id) if sender_id is not None else "")
+        )
+        event_time = self._message_event_time(message)
+        event_marker = event_time or str(getattr(message, "id", ""))
+        return {
+            "event_id": f"{event_type}:{message.chat.id}:{message.id}:{event_marker}",
+            "event_type": event_type,
+            "event_time": event_time,
+            "chat_id": message.chat.id,
+            "chat_title": getattr(message.chat, "title", None) or "",
+            "chat_username": getattr(message.chat, "username", None) or "",
+            "sender": {
+                "id": sender_id,
+                "username": sender_username or "",
+                "display_name": sender_name,
+            },
+            "text": message.text or "",
+            "caption": message.caption or "",
+            "summary": self._message_event_summary(message),
+        }
+
+    async def emit_message_event(self, message: Message, event_type: str) -> None:
+        if not self._message_event_callback:
+            return
+        try:
+            result = self._message_event_callback(
+                self.build_message_event(message, event_type)
+            )
+            if asyncio.iscoroutine(result):
+                await result
+        except Exception as e:
+            self.log(f"消息事件回调失败: {e}", level="WARNING")
 
     def load_config(self, cfg_cls=None):
         cfg_cls = cfg_cls or self.cfg_cls
@@ -1081,7 +1149,6 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
 
                 # Second attempt: Try fetching by cached username BEFORE blind negative guessing
                 cached = self._find_cached_chat(chat.chat_id, chat.name)
-                cached_id_succeeded = False
                 if cached:
                     username = cached.get("username")
                     cached_id = cached.get("id")
@@ -1310,15 +1377,15 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
         self.context.chat_messages[message.chat.id][message.id] = message
 
     async def on_message(self, client: Client, message: Message):
-        self.log(
-            f"收到来自「{message.from_user.username or message.from_user.id}」的消息: {readable_message(message)}"
-        )
+        sender = message_sender_label(message)
+        self.log(f"收到来自「{sender}」的消息: {readable_message(message)}")
+        await self.emit_message_event(message, "message_received")
         await self._on_message(client, message)
 
     async def on_edited_message(self, client, message: Message):
-        self.log(
-            f"收到来自「{message.from_user.username or message.from_user.id}」对消息的更新，消息: {readable_message(message)}"
-        )
+        sender = message_sender_label(message)
+        self.log(f"收到来自「{sender}」对消息的更新，消息: {readable_message(message)}")
+        await self.emit_message_event(message, "message_edited")
         # 避免更新正在处理的消息，等待处理完成
         while (
             self.context.waiting_message
