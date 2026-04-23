@@ -11,6 +11,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.core.config import get_settings
+from backend.utils.storage import (
+    clear_data_dir_override,
+    is_writable_dir,
+    load_data_dir_override,
+    save_data_dir_override,
+)
 
 
 def _is_safe_name(name: str) -> bool:
@@ -22,12 +28,6 @@ def _is_safe_name(name: str) -> bool:
     if "/" in name or "\\" in name or "\x00" in name:
         return False
     return True
-from backend.utils.storage import (
-    clear_data_dir_override,
-    is_writable_dir,
-    load_data_dir_override,
-    save_data_dir_override,
-)
 
 settings = get_settings()
 
@@ -61,7 +61,7 @@ class ConfigService:
                             if task_dir.is_dir() and (task_dir / "config.json").exists():
                                 tasks.append(task_dir.name)
 
-        return sorted(list(set(tasks)))  # 去重并排序
+        return sorted(set(tasks))  # 去重并排序
 
     def list_monitor_tasks(self) -> List[str]:
         """获取所有监控任务名称列表"""
@@ -887,6 +887,83 @@ class ConfigService:
         """
         config_file = self._get_telegram_config_file()
 
+        if not config_file.exists():
+            return True
+
+        try:
+            config_file.unlink()
+            return True
+        except OSError:
+            return False
+
+    # ============ Telegram Bot 通知配置 ============
+
+    def _get_telegram_notification_config_file(self) -> Path:
+        """获取 Telegram Bot 通知配置文件路径"""
+        return self.workdir / ".telegram_notification.json"
+
+    def get_telegram_notification_config(self) -> Optional[Dict[str, str]]:
+        """获取 Telegram Bot 通知配置。"""
+        config_file = self._get_telegram_notification_config_file()
+        if not config_file.exists():
+            return None
+
+        try:
+            with open(config_file, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return None
+
+        if not isinstance(loaded, dict):
+            return None
+
+        bot_token = loaded.get("bot_token")
+        chat_id = loaded.get("chat_id")
+        bot_token = bot_token.strip() if isinstance(bot_token, str) else ""
+        chat_id = chat_id.strip() if isinstance(chat_id, str) else ""
+        if not bot_token or not chat_id:
+            return None
+
+        return {
+            "bot_token": bot_token,
+            "chat_id": chat_id,
+        }
+
+    def save_telegram_notification_config(
+        self,
+        *,
+        bot_token: Optional[str],
+        chat_id: str,
+        keep_existing_token: bool = False,
+    ) -> Dict[str, str]:
+        """保存 Telegram Bot 通知配置。"""
+        existing = self.get_telegram_notification_config() or {}
+        normalized_token = bot_token.strip() if isinstance(bot_token, str) else ""
+        normalized_chat_id = chat_id.strip() if isinstance(chat_id, str) else ""
+
+        final_bot_token = normalized_token
+        if not final_bot_token and keep_existing_token:
+            final_bot_token = str(existing.get("bot_token", "")).strip()
+
+        if not final_bot_token:
+            raise ValueError("bot token is required")
+        if not normalized_chat_id:
+            raise ValueError("chat id is required")
+
+        config = {
+            "bot_token": final_bot_token,
+            "chat_id": normalized_chat_id,
+        }
+        config_file = self._get_telegram_notification_config_file()
+
+        with open(config_file, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+
+        return config
+
+    def delete_telegram_notification_config(self) -> bool:
+        """删除 Telegram Bot 通知配置。"""
+        config_file = self._get_telegram_notification_config_file()
         if not config_file.exists():
             return True
 

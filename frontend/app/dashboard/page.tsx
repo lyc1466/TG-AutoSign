@@ -115,6 +115,11 @@ export default function Dashboard() {
     account_name: "",
     remark: "",
     proxy: "",
+    notification_channel: "global" as "global" | "custom" | "disabled",
+    notification_bot_token: "",
+    notification_bot_token_masked: "",
+    notification_has_custom_token: false,
+    notification_chat_id: "",
   });
 
   const normalizeAccountName = useCallback((name: string) => name.trim(), []);
@@ -458,6 +463,11 @@ export default function Dashboard() {
       account_name: acc.name,
       remark: acc.remark || "",
       proxy: acc.proxy || "",
+      notification_channel: acc.notification_channel || "global",
+      notification_bot_token: "",
+      notification_bot_token_masked: acc.notification_bot_token_masked || "",
+      notification_has_custom_token: Boolean(acc.notification_has_custom_token),
+      notification_chat_id: acc.notification_chat_id || "",
     });
     setShowEditDialog(true);
   };
@@ -470,6 +480,13 @@ export default function Dashboard() {
       await updateAccount(token, editData.account_name, {
         remark: editData.remark || "",
         proxy: editData.proxy || "",
+        notification_channel: editData.notification_channel,
+        notification_bot_token: editData.notification_bot_token || undefined,
+        notification_chat_id: editData.notification_chat_id || undefined,
+        keep_existing_notification_token:
+          editData.notification_channel === "custom" &&
+          !editData.notification_bot_token &&
+          editData.notification_has_custom_token,
       });
       addToast(t("save_changes"), "success");
       setShowEditDialog(false);
@@ -1333,6 +1350,57 @@ export default function Dashboard() {
                   value={editData.proxy}
                   onChange={(e) => setEditData({ ...editData, proxy: e.target.value })}
                 />
+
+                <div className="mt-4">
+                  <label className="text-[11px] mb-2 block">{t("task_notification")}</label>
+                  <div className="grid grid-cols-3 gap-2 mb-4">
+                    {([
+                      { key: "global", label: t("notification_follow_global") },
+                      { key: "custom", label: t("notification_custom") },
+                      { key: "disabled", label: t("notification_disabled") },
+                    ] as const).map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        className={`h-10 rounded-xl border text-[11px] font-bold transition-all ${editData.notification_channel === item.key
+                          ? "border-[#8a3ffc]/40 bg-[#8a3ffc]/15 text-main shadow-[0_10px_30px_rgba(138,63,252,0.18)]"
+                          : "border-white/8 bg-white/3 text-main/55 hover:bg-white/6"}`}
+                        onClick={() => setEditData({ ...editData, notification_channel: item.key })}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {editData.notification_channel === "custom" && (
+                    <div className="space-y-4 rounded-2xl border border-white/6 bg-white/3 p-4">
+                      <div>
+                        <label className="text-[11px] mb-1 block">{t("notification_bot_token")}</label>
+                        <input
+                          type="password"
+                          className="!py-2.5 !px-4"
+                          placeholder={editData.notification_bot_token_masked || t("notification_bot_token_placeholder")}
+                          value={editData.notification_bot_token}
+                          onChange={(e) => setEditData({ ...editData, notification_bot_token: e.target.value })}
+                        />
+                        {editData.notification_has_custom_token && (
+                          <p className="mt-1 text-[9px] text-main/40">{t("notification_bot_token_keep_hint")}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] mb-1 block">{t("notification_chat_id")}</label>
+                        <input
+                          type="text"
+                          className="!py-2.5 !px-4"
+                          placeholder={t("notification_chat_id_placeholder")}
+                          value={editData.notification_chat_id}
+                          onChange={(e) => setEditData({ ...editData, notification_chat_id: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="flex gap-3 mt-6">

@@ -12,6 +12,7 @@ from backend.core.config import get_settings
 from backend.models.account import Account
 from backend.models.task import Task
 from backend.models.task_log import TaskLog
+from backend.services.notifications import get_notification_service
 
 settings = get_settings()
 
@@ -171,12 +172,30 @@ async def run_task_once(db: Session, task: Task) -> TaskLog:
 
         task.last_run_at = task_log.finished_at
         db.commit()
+
+        try:
+            await get_notification_service().send_regular_task_completion(
+                task_obj=task,
+                task_log=task_log,
+                account_name=account.account_name,
+            )
+        except Exception:
+            pass
     except Exception as e:
         msg = f"Error running task: {e}"
         _active_logs[task.id].append(msg)
         task_log.status = "failed"
         task_log.output = msg[-1000:]
         db.commit()
+
+        try:
+            await get_notification_service().send_regular_task_completion(
+                task_obj=task,
+                task_log=task_log,
+                account_name=account.account_name,
+            )
+        except Exception:
+            pass
     finally:
         _active_tasks[task.id] = False
 

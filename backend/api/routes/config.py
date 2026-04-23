@@ -11,9 +11,19 @@ from pydantic import BaseModel
 from backend.core.auth import get_current_user
 from backend.models.user import User
 from backend.services.config import get_config_service
+from backend.services.notifications import get_notification_service
 from backend.utils.storage import is_writable_dir
 
 router = APIRouter()
+
+
+def _mask_secret(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    return value[:4] + "*" * (len(value) - 8) + value[-4:] if len(value) > 8 else "****"
 
 
 def _clear_sign_task_cache() -> None:
@@ -507,6 +517,23 @@ class TelegramConfigSaveResponse(BaseModel):
     message: str
 
 
+class TelegramNotificationConfigRequest(BaseModel):
+    bot_token: Optional[str] = None
+    chat_id: str
+    keep_existing_token: bool = False
+
+
+class TelegramNotificationConfigResponse(BaseModel):
+    has_config: bool
+    bot_token_masked: Optional[str] = None
+    chat_id: Optional[str] = None
+
+
+class TelegramNotificationConfigSaveResponse(BaseModel):
+    success: bool
+    message: str
+
+
 @router.get("/telegram", response_model=TelegramConfigResponse)
 def get_telegram_config(current_user: User = Depends(get_current_user)):
     try:
@@ -565,4 +592,110 @@ def reset_telegram_config(current_user: User = Depends(get_current_user)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to reset Telegram config: {str(e)}",
+        )
+
+
+@router.get(
+    "/telegram-notification", response_model=TelegramNotificationConfigResponse
+)
+def get_telegram_notification_config(current_user: User = Depends(get_current_user)):
+    try:
+        config = get_config_service().get_telegram_notification_config()
+        if not config:
+            return TelegramNotificationConfigResponse(has_config=False)
+
+        return TelegramNotificationConfigResponse(
+            has_config=True,
+            bot_token_masked=_mask_secret(config.get("bot_token")),
+            chat_id=config.get("chat_id"),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to read Telegram notification config: {str(e)}",
+        )
+
+
+@router.post(
+    "/telegram-notification", response_model=TelegramNotificationConfigSaveResponse
+)
+def save_telegram_notification_config(
+    request: TelegramNotificationConfigRequest,
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        get_config_service().save_telegram_notification_config(
+            bot_token=request.bot_token,
+            chat_id=request.chat_id,
+            keep_existing_token=request.keep_existing_token,
+        )
+        return TelegramNotificationConfigSaveResponse(
+            success=True,
+            message="Telegram notification config saved",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save Telegram notification config: {str(e)}",
+        )
+
+
+@router.delete(
+    "/telegram-notification", response_model=TelegramNotificationConfigSaveResponse
+)
+def delete_telegram_notification_config(
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        success = get_config_service().delete_telegram_notification_config()
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete Telegram notification config",
+            )
+        return TelegramNotificationConfigSaveResponse(
+            success=True,
+            message="Telegram notification config deleted",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete Telegram notification config: {str(e)}",
+        )
+
+
+@router.post(
+    "/telegram-notification/test",
+    response_model=TelegramNotificationConfigSaveResponse,
+)
+async def test_telegram_notification_config(
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        config = get_config_service().get_telegram_notification_config()
+        if not config:
+            return TelegramNotificationConfigSaveResponse(
+                success=False,
+                message="Telegram notification config is not set",
+            )
+
+        success = await get_notification_service().send_test_message()
+        if success:
+            return TelegramNotificationConfigSaveResponse(
+                success=True,
+                message="Telegram notification test message sent",
+            )
+
+        return TelegramNotificationConfigSaveResponse(
+            success=False,
+            message="Telegram notification test failed",
+        )
+    except Exception as e:
+        return TelegramNotificationConfigSaveResponse(
+            success=False,
+            message=f"Telegram notification test failed: {str(e)}",
         )

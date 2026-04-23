@@ -1,0 +1,135 @@
+import asyncio
+from datetime import datetime
+
+import backend.services.notifications as notifications_module
+
+
+def test_send_message_posts_to_telegram_api(monkeypatch):
+    service = notifications_module.NotificationService()
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, json, timeout):
+            captured["url"] = url
+            captured["json"] = json
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+    monkeypatch.setattr(notifications_module.httpx, "AsyncClient", FakeClient)
+
+    ok = asyncio.run(
+        service._send_message(bot_token="123:abc", chat_id="-1001", text="done")
+    )
+
+    assert ok is True
+    assert captured["url"] == "https://api.telegram.org/bot123:abc/sendMessage"
+    assert captured["json"] == {
+        "chat_id": "-1001",
+        "text": "done",
+        "disable_web_page_preview": True,
+    }
+    assert captured["timeout"] == 10
+
+
+def test_resolve_target_prefers_account_custom_config(monkeypatch):
+    service = notifications_module.NotificationService()
+    monkeypatch.setattr(
+        notifications_module,
+        "get_config_service",
+        lambda: type(
+            "ConfigServiceStub",
+            (),
+            {
+                "get_telegram_notification_config": lambda self: {
+                    "bot_token": "123:global",
+                    "chat_id": "-100-global",
+                }
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        notifications_module,
+        "get_account_profile",
+        lambda _account_name: {
+            "notification_channel": "custom",
+            "notification_bot_token": "123:custom",
+            "notification_chat_id": "-100-custom",
+        },
+    )
+
+    target = asyncio.run(service.resolve_target("alice"))
+
+    assert target == notifications_module.NotificationTarget(
+        channel="custom",
+        bot_token="123:custom",
+        chat_id="-100-custom",
+    )
+
+
+def test_resolve_target_respects_disabled_channel(monkeypatch):
+    service = notifications_module.NotificationService()
+    monkeypatch.setattr(
+        notifications_module,
+        "get_config_service",
+        lambda: type(
+            "ConfigServiceStub",
+            (),
+            {
+                "get_telegram_notification_config": lambda self: {
+                    "bot_token": "123:global",
+                    "chat_id": "-100-global",
+                }
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        notifications_module,
+        "get_account_profile",
+        lambda _account_name: {
+            "notification_channel": "disabled",
+        },
+    )
+
+    target = asyncio.run(service.resolve_target("alice"))
+
+    assert target == notifications_module.NotificationTarget(
+        channel="disabled",
+        bot_token=None,
+        chat_id=None,
+    )
+
+
+def test_build_sign_task_message_includes_recent_messages_and_truncates():
+    message = notifications_module.build_sign_task_message(
+        task_name="linuxdo_sign",
+        account_name="alice",
+        success=False,
+        summary="Timeout while waiting for reply",
+        finished_at=datetime(2026, 4, 24, 18, 35, 12),
+        output="x" * 5000,
+        message_events=[
+            {"summary": "Bot: 签到成功，积分 +1"},
+            {"text": "Bot: 今日已签到"},
+        ],
+    )
+
+    assert "[任务完成通知]" in message
+    assert "类型：签到任务" in message
+    assert "任务：linuxdo_sign" in message
+    assert "账号：alice" in message
+    assert "状态：失败" in message
+    assert "完成时间：2026-04-24 18:35:12" in message
+    assert "最近消息：" in message
+    assert "1. Bot: 签到成功，积分 +1" in message
+    assert "2. Bot: 今日已签到" in message
+    assert len(message) <= 3500

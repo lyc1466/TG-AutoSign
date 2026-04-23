@@ -26,7 +26,12 @@ import {
     saveTelegramConfig,
     resetTelegramConfig,
     TelegramConfig,
+    getTelegramNotificationConfig,
+    saveTelegramNotificationConfig,
+    deleteTelegramNotificationConfig,
+    testTelegramNotificationConfig,
 } from "../../../lib/api";
+import type { TelegramNotificationConfig } from "../../../lib/types";
 import {
     CaretLeft,
     User,
@@ -107,6 +112,13 @@ export default function SettingsPage() {
         api_id: "",
         api_hash: "",
     });
+    const [telegramNotificationConfig, setTelegramNotificationConfigState] = useState<TelegramNotificationConfig>({ has_config: false });
+    const [telegramNotificationForm, setTelegramNotificationForm] = useState({
+        bot_token: "",
+        chat_id: "",
+        keep_existing_token: false,
+    });
+    const [telegramNotificationLoading, setTelegramNotificationLoading] = useState(false);
 
     const [checking, setChecking] = useState(true);
 
@@ -128,6 +140,7 @@ export default function SettingsPage() {
         loadAIConfig(tokenStr);
         loadGlobalSettings(tokenStr);
         loadTelegramConfig(tokenStr);
+        loadTelegramNotificationConfig(tokenStr);
     }, []);
 
     const loadTOTPStatus = async (tokenStr: string) => {
@@ -168,6 +181,18 @@ export default function SettingsPage() {
                     api_hash: config.api_hash || "",
                 });
             }
+        } catch (err) { }
+    };
+
+    const loadTelegramNotificationConfig = async (tokenStr: string) => {
+        try {
+            const config = await getTelegramNotificationConfig(tokenStr);
+            setTelegramNotificationConfigState(config);
+            setTelegramNotificationForm({
+                bot_token: "",
+                chat_id: config.chat_id || "",
+                keep_existing_token: Boolean(config.has_config),
+            });
         } catch (err) { }
     };
 
@@ -299,6 +324,7 @@ export default function SettingsPage() {
             loadAIConfig(token);
             loadGlobalSettings(token);
             loadTelegramConfig(token);
+            loadTelegramNotificationConfig(token);
         } catch (err: any) {
             addToast(formatErrorMessage("import_failed", err), "error");
         } finally {
@@ -412,6 +438,67 @@ export default function SettingsPage() {
             addToast(formatErrorMessage("operation_failed", err), "error");
         } finally {
             setTelegramLoading(false);
+        }
+    };
+
+    const handleSaveTelegramNotification = async () => {
+        if (!token) return;
+        const botToken = telegramNotificationForm.bot_token.trim();
+        const chatId = telegramNotificationForm.chat_id.trim();
+        const keepExistingToken =
+            telegramNotificationConfig.has_config &&
+            telegramNotificationForm.keep_existing_token &&
+            !botToken;
+
+        if (!chatId || (!botToken && !keepExistingToken)) {
+            addToast(t("form_incomplete"), "error");
+            return;
+        }
+
+        try {
+            setTelegramNotificationLoading(true);
+            await saveTelegramNotificationConfig(token, {
+                bot_token: botToken || undefined,
+                chat_id: chatId,
+                keep_existing_token: keepExistingToken,
+            });
+            addToast(t("telegram_notification_save_success"), "success");
+            loadTelegramNotificationConfig(token);
+        } catch (err: any) {
+            addToast(formatErrorMessage("save_failed", err), "error");
+        } finally {
+            setTelegramNotificationLoading(false);
+        }
+    };
+
+    const handleTestTelegramNotification = async () => {
+        if (!token) return;
+        try {
+            setTelegramNotificationLoading(true);
+            const result = await testTelegramNotificationConfig(token);
+            addToast(
+                result.success ? t("telegram_notification_test_success") : (result.message || t("telegram_notification_test_failed")),
+                result.success ? "success" : "error"
+            );
+        } catch (err: any) {
+            addToast(formatErrorMessage("test_failed", err), "error");
+        } finally {
+            setTelegramNotificationLoading(false);
+        }
+    };
+
+    const handleDeleteTelegramNotification = async () => {
+        if (!token) return;
+        if (!confirm(t("confirm_delete_telegram_notification"))) return;
+        try {
+            setTelegramNotificationLoading(true);
+            await deleteTelegramNotificationConfig(token);
+            addToast(t("telegram_notification_delete_success"), "success");
+            loadTelegramNotificationConfig(token);
+        } catch (err: any) {
+            addToast(formatErrorMessage("operation_failed", err), "error");
+        } finally {
+            setTelegramNotificationLoading(false);
         }
     };
 
@@ -776,6 +863,81 @@ export default function SettingsPage() {
                                 <span className="font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">{t("warning_notice")}</span>
                             </div>
                             {t("tg_config_warning")}
+                        </div>
+                    </div>
+
+                    {/* Telegram Bot 通知配置 */}
+                    <div className="glass-panel p-4">
+                        <div className="flex justify-between items-center mb-4">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-400">
+                                    <BotIcon weight="bold" size={18} />
+                                </div>
+                                <h2 className="text-lg font-bold">{t("telegram_notification_config")}</h2>
+                            </div>
+                            {telegramNotificationConfig.has_config && (
+                                <button
+                                    onClick={handleDeleteTelegramNotification}
+                                    className="action-btn !w-8 !h-8 !text-rose-400"
+                                    title={t("delete_notification_config")}
+                                    disabled={telegramNotificationLoading}
+                                >
+                                    <Trash weight="bold" size={16} />
+                                </button>
+                            )}
+                        </div>
+
+                        <p className="text-[10px] text-[#9496a1] mb-4 leading-relaxed">
+                            {t("telegram_notification_desc")}
+                        </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label className="text-[11px] mb-1">{t("notification_bot_token")}</label>
+                                <input
+                                    type="password"
+                                    className="!py-2 !px-4"
+                                    value={telegramNotificationForm.bot_token}
+                                    onChange={(e) => setTelegramNotificationForm({ ...telegramNotificationForm, bot_token: e.target.value })}
+                                    placeholder={telegramNotificationConfig.bot_token_masked || t("notification_bot_token_placeholder")}
+                                />
+                                {telegramNotificationConfig.bot_token_masked && (
+                                    <p className="mt-1 text-[9px] text-main/40">{t("notification_bot_token_keep_hint")}</p>
+                                )}
+                            </div>
+                            <div>
+                                <label className="text-[11px] mb-1">{t("notification_chat_id")}</label>
+                                <input
+                                    className="!py-2 !px-4"
+                                    value={telegramNotificationForm.chat_id}
+                                    onChange={(e) => setTelegramNotificationForm({ ...telegramNotificationForm, chat_id: e.target.value })}
+                                    placeholder={t("notification_chat_id_placeholder")}
+                                />
+                            </div>
+                            {telegramNotificationConfig.has_config && (
+                                <label className="md:col-span-2 flex items-center gap-2 text-[10px] text-main/60 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={telegramNotificationForm.keep_existing_token}
+                                        onChange={(e) => setTelegramNotificationForm({ ...telegramNotificationForm, keep_existing_token: e.target.checked })}
+                                    />
+                                    <span>{t("notification_keep_existing_token")}</span>
+                                </label>
+                            )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-3">
+                            <button className="btn-gradient w-fit px-5 !py-2 !text-[11px]" onClick={handleSaveTelegramNotification} disabled={telegramNotificationLoading}>
+                                {telegramNotificationLoading ? <Spinner className="animate-spin" /> : t("save")}
+                            </button>
+                            <button className="btn-secondary w-fit px-5 !py-2 !text-[11px]" onClick={handleTestTelegramNotification} disabled={telegramNotificationLoading}>
+                                {telegramNotificationLoading ? <Spinner className="animate-spin" /> : t("test_send")}
+                            </button>
+                            {telegramNotificationConfig.has_config && (
+                                <button className="btn-secondary w-fit px-5 !py-2 !text-[11px] !text-rose-400 hover:bg-rose-500/10" onClick={handleDeleteTelegramNotification} disabled={telegramNotificationLoading}>
+                                    {telegramNotificationLoading ? <Spinner className="animate-spin" /> : t("restore_default")}
+                                </button>
+                            )}
                         </div>
                     </div>
 

@@ -19,6 +19,13 @@ See [CHANGELOG.md](CHANGELOG.md) for the full update history.
 - Run with Docker, Docker Compose, and GHCR image publishing
 - Unify Telegram Client device parameters for consistent deployments
 
+## Telegram Task Completion Notifications
+
+- Configure the default Bot Token and Chat ID in `UI -> System Settings -> Telegram Bot Notifications`
+- Override notifications per account in the dashboard edit dialog with `Use global / Custom / Disabled`
+- Regular tasks and sign tasks both send best-effort completion messages after manual and scheduled runs; notification failures do not change task results
+- No new Docker or Compose environment variables are required for this feature
+
 ## Quick Start
 
 Default admin account:
@@ -74,7 +81,7 @@ docker compose -f docker-compose.full.yml up -d
 Notes:
 
 - At minimum, change `APP_SECRET_KEY`, and usually `ADMIN_PASSWORD` as well
-- Telegram API, AI settings, and the data directory are now managed from `UI -> System Settings`, so they are intentionally omitted from Compose env
+- Telegram API, AI settings, task-completion Bot notifications, and the data directory are now managed from `UI -> System Settings`, so they are intentionally omitted from Compose env
 - Use `docker-compose.yml` when you want the fastest deployment path
 - Use `docker-compose.full.yml` when you need proxy settings, device overrides, task tuning, or the optional hardening block
 
@@ -154,12 +161,13 @@ tools/        Helper scripts
 Runtime configuration is now routed through a unified layer. When deploying, read precedence in this order:
 
 1. Most base runtime settings are still primarily driven by container or process environment variables.
-2. A small set of persisted settings follow their own rules, especially Telegram API credentials, AI configuration, and the data directory.
+2. A small set of persisted settings follow their own rules, especially Telegram API credentials, AI configuration, Telegram completion notification settings, and the data directory.
 3. Built-in defaults are used only when the relevant env or persisted source does not provide a value.
 
 Key rules:
 
 - Telegram API credentials now follow `.telegram_api.json` > `TG_API_ID` / `TG_API_HASH` > built-in defaults. This lets you inject credentials through env for the first boot, then let later UI changes take precedence.
+- Telegram completion notifications are stored in `.telegram_notification.json` for the global default, while per-account overrides live in the account profile store and do not require extra environment variables.
 - AI configuration is now read from `.openai_config.json`; if the UI has not stored it, AI is treated as disabled.
 - The effective data directory now comes from the override file pointed to by `APP_DATA_DIR_OVERRIDE_FILE`; when unset, the default remains `/data`.
 - Per-request or per-login explicit proxy > account proxy > `TG_PROXY`.

@@ -87,6 +87,10 @@ class AccountInfo(BaseModel):
     size: int
     remark: Optional[str] = None
     proxy: Optional[str] = None
+    notification_channel: Optional[str] = None
+    notification_has_custom_token: bool = False
+    notification_bot_token_masked: Optional[str] = None
+    notification_chat_id: Optional[str] = None
 
 
 class QrLoginStatusResponse(BaseModel):
@@ -151,6 +155,10 @@ class AccountUpdateRequest(BaseModel):
 
     remark: Optional[str] = None
     proxy: Optional[str] = None
+    notification_channel: Optional[str] = None
+    notification_bot_token: Optional[str] = None
+    notification_chat_id: Optional[str] = None
+    keep_existing_notification_token: bool = False
 
 
 class AccountUpdateResponse(BaseModel):
@@ -506,12 +514,24 @@ def update_account(
             detail=f"账号 {account_name} 不存在",
         )
     try:
-        from backend.utils.tg_session import set_account_profile
+        from backend.utils.tg_session import get_account_profile, set_account_profile
+
+        notification_bot_token = request.notification_bot_token
+        if (
+            request.notification_channel == "custom"
+            and not notification_bot_token
+            and request.keep_existing_notification_token
+        ):
+            existing_profile = get_account_profile(account_name)
+            notification_bot_token = existing_profile.get("notification_bot_token")
 
         set_account_profile(
             account_name,
             remark=request.remark,
             proxy=request.proxy,
+            notification_channel=request.notification_channel,
+            notification_bot_token=notification_bot_token,
+            notification_chat_id=request.notification_chat_id,
         )
 
         # 刷新缓存并返回更新后的账号信息
