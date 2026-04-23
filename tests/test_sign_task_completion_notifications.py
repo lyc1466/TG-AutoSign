@@ -1,16 +1,10 @@
 import asyncio
+import importlib
 import sys
 import types
 from types import SimpleNamespace
 
 import backend.core.config as config_module
-
-fake_tg_core = types.ModuleType("tg_signer.core")
-fake_tg_core.UserSigner = object
-fake_tg_core.get_client = lambda *args, **kwargs: None
-sys.modules.setdefault("tg_signer.core", fake_tg_core)
-
-import backend.services.sign_tasks as sign_tasks_module  # noqa: E402
 
 
 def _close_background_task(coro):
@@ -22,7 +16,22 @@ async def _no_sleep(_seconds):
     return None
 
 
+class _CapturedAwaitable:
+    def __await__(self):
+        if False:
+            yield None
+        return True
+
+
 def _build_service(monkeypatch, tmp_path):
+    fake_tg_core = types.ModuleType("tg_signer.core")
+    fake_tg_core.UserSigner = object
+    fake_tg_core.get_client = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "tg_signer.core", fake_tg_core)
+
+    sign_tasks_module = importlib.import_module("backend.services.sign_tasks")
+    sign_tasks_module = importlib.reload(sign_tasks_module)
+
     settings = SimpleNamespace(
         resolve_workdir=lambda: tmp_path,
         resolve_session_dir=lambda: tmp_path,
@@ -59,13 +68,14 @@ def _build_service(monkeypatch, tmp_path):
     service = sign_tasks_module.SignTaskService()
     monkeypatch.setattr(service, "get_task", lambda *_args, **_kwargs: {"chats": []})
     monkeypatch.setattr(service, "_task_requires_updates", lambda _cfg: False)
-    return service
+    return sign_tasks_module, service
 
 
 def test_run_task_with_logs_sends_sign_notification_on_success(monkeypatch, tmp_path):
-    service = _build_service(monkeypatch, tmp_path)
+    sign_tasks_module, service = _build_service(monkeypatch, tmp_path)
     saved = {"called": False}
     captured = {}
+    scheduled = []
 
     class FakeSigner:
         def __init__(self, *args, **kwargs):
@@ -77,10 +87,13 @@ def test_run_task_with_logs_sends_sign_notification_on_success(monkeypatch, tmp_
     def fake_save_run_info(*args, **kwargs):
         saved["called"] = True
 
-    async def fake_send(**kwargs):
+    def fake_send(**kwargs):
         captured.update(kwargs)
         captured["save_called"] = saved["called"]
-        return True
+        return _CapturedAwaitable()
+
+    def fake_dispatch(awaitable, *, logger, description, timeout=5):
+        scheduled.append({"description": description, "timeout": timeout, "logger": logger})
 
     monkeypatch.setattr(sign_tasks_module, "BackendUserSigner", FakeSigner)
     monkeypatch.setattr(service, "_save_run_info", fake_save_run_info)
@@ -89,6 +102,7 @@ def test_run_task_with_logs_sends_sign_notification_on_success(monkeypatch, tmp_
         "get_notification_service",
         lambda: SimpleNamespace(send_sign_task_completion=fake_send),
     )
+    monkeypatch.setattr(sign_tasks_module, "dispatch_notification", fake_dispatch)
 
     result = asyncio.run(service.run_task_with_logs(account_name="alice", task_name="linuxdo"))
 
@@ -98,11 +112,14 @@ def test_run_task_with_logs_sends_sign_notification_on_success(monkeypatch, tmp_
     assert captured["success"] is True
     assert captured["message_events"][0]["summary"] == "Bot: 签到成功，积分 +1"
     assert captured["save_called"] is True
+    assert len(scheduled) == 1
+    assert scheduled[0]["timeout"] == 5
 
 
 def test_run_task_with_logs_sends_sign_notification_on_failure(monkeypatch, tmp_path):
-    service = _build_service(monkeypatch, tmp_path)
+    sign_tasks_module, service = _build_service(monkeypatch, tmp_path)
     captured = {}
+    scheduled = []
 
     class FakeSigner:
         def __init__(self, *args, **kwargs):
@@ -112,9 +129,12 @@ def test_run_task_with_logs_sends_sign_notification_on_failure(monkeypatch, tmp_
             await self._callback({"summary": "Bot: 正在处理"})
             raise RuntimeError("sign failed")
 
-    async def fake_send(**kwargs):
+    def fake_send(**kwargs):
         captured.update(kwargs)
-        return True
+        return _CapturedAwaitable()
+
+    def fake_dispatch(awaitable, *, logger, description, timeout=5):
+        scheduled.append({"description": description, "timeout": timeout, "logger": logger})
 
     monkeypatch.setattr(sign_tasks_module, "BackendUserSigner", FakeSigner)
     monkeypatch.setattr(service, "_save_run_info", lambda *args, **kwargs: None)
@@ -123,6 +143,7 @@ def test_run_task_with_logs_sends_sign_notification_on_failure(monkeypatch, tmp_
         "get_notification_service",
         lambda: SimpleNamespace(send_sign_task_completion=fake_send),
     )
+    monkeypatch.setattr(sign_tasks_module, "dispatch_notification", fake_dispatch)
 
     result = asyncio.run(service.run_task_with_logs(account_name="bob", task_name="linuxdo"))
 
@@ -131,3 +152,5 @@ def test_run_task_with_logs_sends_sign_notification_on_failure(monkeypatch, tmp_
     assert captured["account_name"] == "bob"
     assert captured["success"] is False
     assert "sign failed" in captured["summary"]
+    assert len(scheduled) == 1
+    assert scheduled[0]["timeout"] == 5

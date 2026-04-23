@@ -1,9 +1,24 @@
+import importlib.util
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 import backend.services.telegram as telegram_module
 import backend.utils.tg_session as tg_session_module
+
+
+def _load_accounts_routes_module():
+    module_path = Path(__file__).resolve().parents[1] / "backend" / "api" / "routes" / "accounts.py"
+    spec = importlib.util.spec_from_file_location("accounts_routes_under_test", module_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    module.AccountUpdateRequest.update_forward_refs()
+    return module
 
 
 def _patch_session_dir(monkeypatch, tmp_path):
@@ -67,3 +82,30 @@ def test_list_accounts_exposes_masked_notification_metadata(monkeypatch, tmp_pat
     assert account["notification_bot_token_masked"] == "1234*********oken"
     assert account["notification_chat_id"] == "-100100200300"
     assert "notification_bot_token" not in account
+
+
+def test_update_account_returns_400_for_invalid_notification_channel(monkeypatch):
+    account_routes = _load_accounts_routes_module()
+    monkeypatch.setattr(
+        account_routes,
+        "get_telegram_service",
+        lambda: SimpleNamespace(
+            account_exists=lambda _account_name: True,
+            list_accounts=lambda force_refresh=False: [],
+        ),
+    )
+
+    def raise_value_error(*args, **kwargs):
+        raise ValueError("notification_channel must be one of: global, custom, disabled")
+
+    monkeypatch.setattr(tg_session_module, "set_account_profile", raise_value_error)
+
+    with pytest.raises(HTTPException) as exc_info:
+        account_routes.update_account(
+            "alice",
+            account_routes.AccountUpdateRequest(notification_channel="invalid"),
+            current_user=SimpleNamespace(username="tester"),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "notification_channel" in str(exc_info.value.detail)

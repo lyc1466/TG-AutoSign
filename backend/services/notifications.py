@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Awaitable, Optional
 
 from backend.services.config import get_config_service
 from backend.utils.tg_session import get_account_profile
@@ -20,6 +21,7 @@ except ImportError:  # pragma: no cover - exercised via monkeypatch in tests
 
 
 logger = logging.getLogger("backend.notifications")
+DEFAULT_NOTIFICATION_TIMEOUT_SECONDS = 5.0
 
 
 @dataclass(frozen=True)
@@ -84,6 +86,30 @@ def _recent_message_lines(
             summary = summary[:197] + "..."
         lines.append(f"{index}. {summary}")
     return lines
+
+
+def dispatch_notification(
+    awaitable: Awaitable[Any],
+    *,
+    logger: logging.Logger,
+    description: str,
+    timeout: float = DEFAULT_NOTIFICATION_TIMEOUT_SECONDS,
+) -> None:
+    async def runner() -> None:
+        try:
+            await asyncio.wait_for(awaitable, timeout=timeout)
+        except Exception:
+            logger.exception(description)
+
+    task = asyncio.create_task(runner())
+
+    def consume_result(done_task: asyncio.Task[None]) -> None:
+        try:
+            done_task.result()
+        except Exception:
+            logger.exception("%s", description)
+
+    task.add_done_callback(consume_result)
 
 
 def build_regular_task_message(

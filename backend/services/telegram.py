@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 from backend.core.config import get_settings
 from backend.core.runtime_config import get_telegram_api_runtime_config
 from backend.utils.account_locks import get_account_lock
+from backend.utils.masking import mask_secret
 from backend.utils.proxy import resolve_proxy_dict
 from backend.utils.tg_session import (
     delete_account_session_string,
@@ -37,15 +38,6 @@ logger = logging.getLogger("backend.qr_login")
 # 全局存储临时的登录 session
 _login_sessions = {}
 _qr_login_sessions = {}
-
-
-def _mask_secret(value: Optional[str]) -> Optional[str]:
-    if not value:
-        return None
-    value = value.strip()
-    if not value:
-        return None
-    return value[:4] + "*" * (len(value) - 8) + value[-4:] if len(value) > 8 else "****"
 
 
 class TelegramService:
@@ -81,7 +73,7 @@ class TelegramService:
             "proxy": profile.get("proxy"),
             "notification_channel": notification_channel,
             "notification_has_custom_token": bool(notification_bot_token),
-            "notification_bot_token_masked": _mask_secret(notification_bot_token),
+            "notification_bot_token_masked": mask_secret(notification_bot_token),
             "notification_chat_id": notification_chat_id,
         }
 

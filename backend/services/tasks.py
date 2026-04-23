@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
@@ -12,9 +13,13 @@ from backend.core.config import get_settings
 from backend.models.account import Account
 from backend.models.task import Task
 from backend.models.task_log import TaskLog
-from backend.services.notifications import get_notification_service
+from backend.services.notifications import (
+    dispatch_notification,
+    get_notification_service,
+)
 
 settings = get_settings()
+logger = logging.getLogger("backend.tasks")
 
 # 用于实时日志推送的状态跟踪
 _active_tasks: dict[int, bool] = {}
@@ -111,6 +116,26 @@ def _create_log_file(task: Task) -> Path:
     return logs_dir / f"task_{task.id}_{ts}.log"
 
 
+def _dispatch_task_completion_notification(
+    *,
+    task: Task,
+    task_log: TaskLog,
+    account_name: str,
+) -> None:
+    dispatch_notification(
+        get_notification_service().send_regular_task_completion(
+            task_obj=task,
+            task_log=task_log,
+            account_name=account_name,
+        ),
+        logger=logger,
+        description=(
+            "Failed to send regular task completion notification "
+            f"for account={account_name}, task={task.name}"
+        ),
+    )
+
+
 async def run_task_once(db: Session, task: Task) -> TaskLog:
     if is_task_running(task.id):
         # 如果已经在运行，返回最新的运行记录（或者抛出异常）
@@ -172,30 +197,22 @@ async def run_task_once(db: Session, task: Task) -> TaskLog:
 
         task.last_run_at = task_log.finished_at
         db.commit()
-
-        try:
-            await get_notification_service().send_regular_task_completion(
-                task_obj=task,
-                task_log=task_log,
-                account_name=account.account_name,
-            )
-        except Exception:
-            pass
+        _dispatch_task_completion_notification(
+            task=task,
+            task_log=task_log,
+            account_name=account.account_name,
+        )
     except Exception as e:
         msg = f"Error running task: {e}"
         _active_logs[task.id].append(msg)
         task_log.status = "failed"
         task_log.output = msg[-1000:]
         db.commit()
-
-        try:
-            await get_notification_service().send_regular_task_completion(
-                task_obj=task,
-                task_log=task_log,
-                account_name=account.account_name,
-            )
-        except Exception:
-            pass
+        _dispatch_task_completion_notification(
+            task=task,
+            task_log=task_log,
+            account_name=account.account_name,
+        )
     finally:
         _active_tasks[task.id] = False
 

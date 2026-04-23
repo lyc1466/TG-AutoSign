@@ -34,6 +34,13 @@ def _make_task(task_id: int = 1, name: str = "daily_cleanup", account_name: str 
     )
 
 
+class _CapturedAwaitable:
+    def __await__(self):
+        if False:
+            yield None
+        return True
+
+
 def test_run_task_once_sends_notification_after_success(monkeypatch, tmp_path):
     monkeypatch.setattr(
         tasks_module,
@@ -47,12 +54,16 @@ def test_run_task_once_sends_notification_after_success(monkeypatch, tmp_path):
         return 0, "success output", ""
 
     sent = {}
+    scheduled = []
 
-    async def fake_send(*, task_obj, task_log, account_name):
+    def fake_send(*, task_obj, task_log, account_name):
         sent["task_obj"] = task_obj
         sent["task_log"] = task_log
         sent["account_name"] = account_name
-        return True
+        return _CapturedAwaitable()
+
+    def fake_dispatch(awaitable, *, logger, description, timeout=5):
+        scheduled.append({"description": description, "timeout": timeout, "logger": logger})
 
     monkeypatch.setattr(tasks_module, "async_run_task_cli", fake_cli_success)
     monkeypatch.setattr(
@@ -60,6 +71,7 @@ def test_run_task_once_sends_notification_after_success(monkeypatch, tmp_path):
         "get_notification_service",
         lambda: SimpleNamespace(send_regular_task_completion=fake_send),
     )
+    monkeypatch.setattr(tasks_module, "dispatch_notification", fake_dispatch)
 
     db = _FakeDB()
     task = _make_task()
@@ -70,6 +82,8 @@ def test_run_task_once_sends_notification_after_success(monkeypatch, tmp_path):
     assert sent["task_obj"] is task
     assert sent["task_log"] is task_log
     assert sent["account_name"] == "alice"
+    assert len(scheduled) == 1
+    assert scheduled[0]["timeout"] == 5
 
 
 def test_run_task_once_sends_notification_after_failure(monkeypatch, tmp_path):
@@ -85,11 +99,15 @@ def test_run_task_once_sends_notification_after_failure(monkeypatch, tmp_path):
         return 1, "", "stderr failure"
 
     sent = {}
+    scheduled = []
 
-    async def fake_send(*, task_obj, task_log, account_name):
+    def fake_send(*, task_obj, task_log, account_name):
         sent["status"] = task_log.status
         sent["account_name"] = account_name
-        return True
+        return _CapturedAwaitable()
+
+    def fake_dispatch(awaitable, *, logger, description, timeout=5):
+        scheduled.append({"description": description, "timeout": timeout, "logger": logger})
 
     monkeypatch.setattr(tasks_module, "async_run_task_cli", fake_cli_failure)
     monkeypatch.setattr(
@@ -97,6 +115,7 @@ def test_run_task_once_sends_notification_after_failure(monkeypatch, tmp_path):
         "get_notification_service",
         lambda: SimpleNamespace(send_regular_task_completion=fake_send),
     )
+    monkeypatch.setattr(tasks_module, "dispatch_notification", fake_dispatch)
 
     db = _FakeDB()
     task = _make_task(task_id=2, name="nightly_job", account_name="bob")
@@ -109,3 +128,5 @@ def test_run_task_once_sends_notification_after_failure(monkeypatch, tmp_path):
         "status": "failed",
         "account_name": "bob",
     }
+    assert len(scheduled) == 1
+    assert scheduled[0]["timeout"] == 5

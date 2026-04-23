@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+from types import SimpleNamespace
 
 import backend.services.notifications as notifications_module
 
@@ -133,3 +134,45 @@ def test_build_sign_task_message_includes_recent_messages_and_truncates():
     assert "1. Bot: 签到成功，积分 +1" in message
     assert "2. Bot: 今日已签到" in message
     assert len(message) <= 3500
+
+
+def test_dispatch_notification_uses_timeout_and_logs_failures(monkeypatch):
+    captured = {}
+    logged = []
+
+    class DummyTask:
+        def add_done_callback(self, callback):
+            callback(self)
+
+        def result(self):
+            return None
+
+        def cancelled(self):
+            return False
+
+    async def fake_wait_for(awaitable, timeout):
+        captured["timeout"] = timeout
+        await awaitable
+
+    async def failing_awaitable():
+        raise RuntimeError("boom")
+
+    def fake_create_task(coro):
+        asyncio.run(coro)
+        return DummyTask()
+
+    monkeypatch.setattr(notifications_module.asyncio, "wait_for", fake_wait_for)
+    monkeypatch.setattr(notifications_module.asyncio, "create_task", fake_create_task)
+
+    logger = SimpleNamespace(
+        exception=lambda message, *args, **kwargs: logged.append(message)
+    )
+
+    notifications_module.dispatch_notification(
+        failing_awaitable(),
+        logger=logger,
+        description="notification dispatch failed",
+    )
+
+    assert captured["timeout"] == 5
+    assert logged == ["notification dispatch failed"]

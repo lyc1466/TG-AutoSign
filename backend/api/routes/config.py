@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -12,18 +13,11 @@ from backend.core.auth import get_current_user
 from backend.models.user import User
 from backend.services.config import get_config_service
 from backend.services.notifications import get_notification_service
+from backend.utils.masking import mask_secret
 from backend.utils.storage import is_writable_dir
 
 router = APIRouter()
-
-
-def _mask_secret(value: Optional[str]) -> Optional[str]:
-    if not value:
-        return None
-    value = value.strip()
-    if not value:
-        return None
-    return value[:4] + "*" * (len(value) - 8) + value[-4:] if len(value) > 8 else "****"
+logger = logging.getLogger("backend.config_routes")
 
 
 def _clear_sign_task_cache() -> None:
@@ -606,7 +600,7 @@ def get_telegram_notification_config(current_user: User = Depends(get_current_us
 
         return TelegramNotificationConfigResponse(
             has_config=True,
-            bot_token_masked=_mask_secret(config.get("bot_token")),
+            bot_token_masked=mask_secret(config.get("bot_token")),
             chat_id=config.get("chat_id"),
         )
     except Exception as e:
@@ -694,8 +688,9 @@ async def test_telegram_notification_config(
             success=False,
             message="Telegram notification test failed",
         )
-    except Exception as e:
+    except Exception:
+        logger.exception("Failed to send Telegram notification test message")
         return TelegramNotificationConfigSaveResponse(
             success=False,
-            message=f"Telegram notification test failed: {str(e)}",
+            message="Telegram notification test failed",
         )
