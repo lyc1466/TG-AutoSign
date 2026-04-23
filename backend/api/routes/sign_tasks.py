@@ -172,6 +172,25 @@ class RunTaskResult(BaseModel):
     error: str
 
 
+class MessageSenderInfo(BaseModel):
+    id: Optional[int] = None
+    username: str = ""
+    display_name: str = ""
+
+
+class MessageEventItem(BaseModel):
+    event_id: str = ""
+    event_type: str = ""
+    event_time: str = ""
+    chat_id: Optional[int] = None
+    chat_title: str = ""
+    chat_username: str = ""
+    sender: MessageSenderInfo = Field(default_factory=MessageSenderInfo)
+    text: str = ""
+    caption: str = ""
+    summary: str = ""
+
+
 class TaskHistoryItem(BaseModel):
     time: str
     success: bool
@@ -179,6 +198,7 @@ class TaskHistoryItem(BaseModel):
     flow_logs: List[str] = Field(default_factory=list)
     flow_truncated: bool = False
     flow_line_count: int = 0
+    message_events: List[MessageEventItem] = Field(default_factory=list)
 
 
 # API 路由
@@ -440,12 +460,31 @@ async def sign_task_logs_ws(
     await websocket.accept()
 
     last_idx = 0
+    last_event_sequence = 0
     try:
         while True:
+            sign_task_service = get_sign_task_service()
             # 获取当前所有日志
-            active_logs = get_sign_task_service().get_active_logs(
-                task_name, account_name=account_name
-            )
+            active_logs = sign_task_service.get_active_logs(task_name, account_name=account_name)
+            if hasattr(sign_task_service, "get_active_message_events_since"):
+                new_message_events, latest_event_sequence = (
+                    sign_task_service.get_active_message_events_since(
+                        task_name,
+                        account_name=account_name,
+                        after_sequence=last_event_sequence,
+                    )
+                )
+            else:
+                active_message_events = sign_task_service.get_active_message_events(
+                    task_name,
+                    account_name=account_name,
+                )
+                if len(active_message_events) > last_event_sequence:
+                    new_message_events = active_message_events[last_event_sequence:]
+                    latest_event_sequence = len(active_message_events)
+                else:
+                    new_message_events = []
+                    latest_event_sequence = len(active_message_events)
 
             # 如果有新内容，则推送
             if len(active_logs) > last_idx:
@@ -454,19 +493,32 @@ async def sign_task_logs_ws(
                     {
                         "type": "logs",
                         "data": new_logs,
-                        "is_running": get_sign_task_service().is_task_running(
+                        "is_running": sign_task_service.is_task_running(
                             task_name, account_name=account_name
                         ),
                     }
                 )
                 last_idx = len(active_logs)
 
+            if new_message_events:
+                await websocket.send_json(
+                    {
+                        "type": "message_events",
+                        "data": new_message_events,
+                        "is_running": sign_task_service.is_task_running(
+                            task_name, account_name=account_name
+                        ),
+                    }
+                )
+                last_event_sequence = latest_event_sequence
+            elif latest_event_sequence > last_event_sequence:
+                last_event_sequence = latest_event_sequence
+
             # 如果任务已结束且日志已推完
             if (
-                not get_sign_task_service().is_task_running(
-                    task_name, account_name=account_name
-                )
+                not sign_task_service.is_task_running(task_name, account_name=account_name)
                 and last_idx >= len(active_logs)
+                and last_event_sequence >= latest_event_sequence
             ):
                 await websocket.send_json({"type": "done", "is_running": False})
                 break

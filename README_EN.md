@@ -15,7 +15,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full update history.
 - Manage multiple Telegram accounts in one place
 - Automate sign-ins, scheduled messages, and button actions
 - Use AI Vision and AI Calculate actions in workflows
-- Inspect logs, history, and account states from a web panel
+- Inspect logs, structured message history, and account states from a web panel
 - Run with Docker, Docker Compose, and GHCR image publishing
 - Unify Telegram Client device parameters for consistent deployments
 
@@ -222,6 +222,7 @@ Telegram API credentials support a “use env on first boot, then prefer UI afte
 | `SIGN_TASK_HISTORY_MAX_ENTRIES` | `100` | Max history entries per task |
 | `SIGN_TASK_HISTORY_MAX_FLOW_LINES` | `200` | Max flow log lines per run |
 | `SIGN_TASK_HISTORY_MAX_LINE_CHARS` | `500` | Max characters per log line |
+| `SIGN_TASK_HISTORY_MAX_MESSAGE_EVENTS` | `100` | Max structured message events kept for a single run; set to `0` to disable history retention |
 
 ### AI
 
