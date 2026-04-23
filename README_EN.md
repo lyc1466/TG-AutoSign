@@ -1,10 +1,14 @@
 # TG-AutoSign
 
-[中文说明](README.md)
+[中文说明](README.md) | [Changelog](CHANGELOG.md)
 
 TG-AutoSign is a Telegram automation project with a web management panel. It supports multi-account management, auto sign-in workflows, message and button actions, AI-assisted tasks, execution logs, and Docker-based deployment.
 
 > This repository continues maintenance on top of earlier projects, and the current maintained version has been developed and organized end-to-end with GitHub Copilot, including panelization, containerization, unified client device parameters, and deployment guidance.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the full update history.
 
 ## Capabilities
 
