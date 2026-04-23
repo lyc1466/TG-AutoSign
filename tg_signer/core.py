@@ -1503,22 +1503,28 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
                     if message is None:
                         continue
                     self.context.waiting_message = message
-                    ok = False
-                    if isinstance(action, ClickKeyboardByTextAction):
-                        ok = await self._click_keyboard_by_text(action, message)
-                    elif isinstance(action, ReplyByCalculationProblemAction):
-                        ok = await self._reply_by_calculation_problem(action, message)
-                    elif isinstance(action, ChooseOptionByImageAction):
-                        ok = await self._choose_option_by_image(action, message)
-                    elif isinstance(action, ReplyByImageRecognitionAction):
-                        ok = await self._reply_by_image_recognition(action, message)
-                    elif isinstance(action, ClickButtonByCalculationProblemAction):
-                        ok = await self._click_button_by_calculation_problem(action, message)
-                    if ok:
-                        # 将消息ID对应value置为None，保证收到消息的编辑时消息所处的顺序
-                        self.context.chat_messages[chat.chat_id][message.id] = None
-                        return None
-                    self.log(f"忽略消息: {readable_message(message)}")
+                    try:
+                        ok = False
+                        if isinstance(action, ClickKeyboardByTextAction):
+                            ok = await self._click_keyboard_by_text(action, message)
+                        elif isinstance(action, ReplyByCalculationProblemAction):
+                            ok = await self._reply_by_calculation_problem(action, message)
+                        elif isinstance(action, ChooseOptionByImageAction):
+                            ok = await self._choose_option_by_image(action, message)
+                        elif isinstance(action, ReplyByImageRecognitionAction):
+                            ok = await self._reply_by_image_recognition(action, message)
+                        elif isinstance(action, ClickButtonByCalculationProblemAction):
+                            ok = await self._click_button_by_calculation_problem(action, message)
+                        if ok:
+                            # 将消息ID对应value置为None，保证收到消息的编辑时消息所处的顺序
+                            self.context.chat_messages[chat.chat_id][message.id] = None
+                            return None
+                        self.log(f"忽略消息: {readable_message(message)}")
+                    finally:
+                        # Allow edited versions of the same message to be captured and retried
+                        # before the outer wait loop reaches its global timeout.
+                        if self.context.waiting_message is message:
+                            self.context.waiting_message = None
             # Fallback: try recent history in case message handlers missed the reply.
             if isinstance(
                 action,
