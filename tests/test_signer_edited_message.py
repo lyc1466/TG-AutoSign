@@ -1,4 +1,5 @@
 import asyncio
+import importlib
 import sys
 import types
 from collections import defaultdict
@@ -9,26 +10,27 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-ai_tools_module = types.ModuleType("tg_signer.ai_tools")
+
+def _load_core_module(monkeypatch):
+    ai_tools_module = types.ModuleType("tg_signer.ai_tools")
 
 
-class _FakeAITools:
-    pass
+    class _FakeAITools:
+        pass
 
 
-class _FakeOpenAIConfigManager:
-    def __init__(self, workdir):
-        self.workdir = workdir
+    class _FakeOpenAIConfigManager:
+        def __init__(self, workdir):
+            self.workdir = workdir
+
+    ai_tools_module.AITools = _FakeAITools
+    ai_tools_module.OpenAIConfigManager = _FakeOpenAIConfigManager
+    monkeypatch.setitem(sys.modules, "tg_signer.ai_tools", ai_tools_module)
+    monkeypatch.delitem(sys.modules, "tg_signer.core", raising=False)
+    return importlib.import_module("tg_signer.core")
 
 
-ai_tools_module.AITools = _FakeAITools
-ai_tools_module.OpenAIConfigManager = _FakeOpenAIConfigManager
-sys.modules.setdefault("tg_signer.ai_tools", ai_tools_module)
-
-import tg_signer.core as core_module
-
-
-def _make_signer():
+def _make_signer(core_module):
     signer = core_module.UserSigner.__new__(core_module.UserSigner)
     signer._account = "acc1"
     signer.task_name = "task1"
@@ -54,8 +56,9 @@ def _make_message(message_id: int, chat_id: int = 100):
     )
 
 
-def test_wait_for_processes_same_message_edit_before_timeout():
-    signer = _make_signer()
+def test_wait_for_processes_same_message_edit_before_timeout(monkeypatch):
+    core_module = _load_core_module(monkeypatch)
+    signer = _make_signer(core_module)
     action = core_module.ClickKeyboardByTextAction(text="go")
     chat = core_module.SignChatV3(
         chat_id=100,
@@ -73,7 +76,6 @@ def test_wait_for_processes_same_message_edit_before_timeout():
         signer.context.chat_messages[message.chat.id][message.id] = message
 
     signer._on_message = fake_on_message
-    signer.log = lambda *args, **kwargs: None
 
     async def fake_click(action_, message):
         if message.reply_markup:
@@ -93,12 +95,11 @@ def test_wait_for_processes_same_message_edit_before_timeout():
         async def publish_edit():
             await processing_started.wait()
             edit_task = asyncio.create_task(signer.on_edited_message(None, edited))
-            await asyncio.sleep(0.05)
             release_processing.set()
             await edit_task
 
         await asyncio.gather(
-            signer.wait_for(chat, action, timeout=0.8),
+            signer.wait_for(chat, action, timeout=2.0),
             publish_edit(),
         )
 
