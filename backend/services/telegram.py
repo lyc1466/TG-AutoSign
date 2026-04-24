@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
-import os
 import secrets
 import time
 from datetime import datetime
@@ -17,6 +16,7 @@ from typing import Any, Dict, List, Optional
 from backend.core.config import get_settings
 from backend.core.runtime_config import get_telegram_api_runtime_config
 from backend.utils.account_locks import get_account_lock
+from backend.utils.masking import mask_secret
 from backend.utils.proxy import resolve_proxy_dict
 from backend.utils.tg_session import (
     delete_account_session_string,
@@ -47,6 +47,35 @@ class TelegramService:
         self.session_dir = settings.resolve_session_dir()
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self._accounts_cache: Optional[List[Dict[str, Any]]] = None
+
+    def _build_account_entry(self, account_name: str, session_file) -> Dict[str, Any]:
+        profile = get_account_profile(account_name)
+        notification_channel = profile.get("notification_channel") or "global"
+        notification_bot_token = profile.get("notification_bot_token")
+        notification_bot_token = (
+            notification_bot_token.strip()
+            if isinstance(notification_bot_token, str) and notification_bot_token.strip()
+            else None
+        )
+        notification_chat_id = profile.get("notification_chat_id")
+        notification_chat_id = (
+            notification_chat_id.strip()
+            if isinstance(notification_chat_id, str) and notification_chat_id.strip()
+            else None
+        )
+
+        return {
+            "name": account_name,
+            "session_file": str(session_file),
+            "exists": session_file.exists(),
+            "size": session_file.stat().st_size if session_file.exists() else 0,
+            "remark": profile.get("remark"),
+            "proxy": profile.get("proxy"),
+            "notification_channel": notification_channel,
+            "notification_has_custom_token": bool(notification_bot_token),
+            "notification_bot_token_masked": mask_secret(notification_bot_token),
+            "notification_chat_id": notification_chat_id,
+        }
 
     def list_accounts(self, force_refresh: bool = False) -> List[Dict[str, Any]]:
         """
@@ -84,19 +113,7 @@ class TelegramService:
                     seen.add(account_name)
                     if account_name in pending_accounts:
                         continue
-                    profile = get_account_profile(account_name)
-                    accounts.append(
-                        {
-                            "name": account_name,
-                            "session_file": str(session_file),
-                            "exists": session_file.exists(),
-                            "size": session_file.stat().st_size
-                            if session_file.exists()
-                            else 0,
-                            "remark": profile.get("remark"),
-                            "proxy": profile.get("proxy"),
-                        }
-                    )
+                    accounts.append(self._build_account_entry(account_name, session_file))
 
                 for account_name in list_account_names():
                     if account_name in seen:
@@ -104,39 +121,15 @@ class TelegramService:
                     if account_name in pending_accounts:
                         continue
                     session_file = self.session_dir / f"{account_name}.session_string"
-                    profile = get_account_profile(account_name)
-                    accounts.append(
-                        {
-                            "name": account_name,
-                            "session_file": str(session_file),
-                            "exists": session_file.exists(),
-                            "size": session_file.stat().st_size
-                            if session_file.exists()
-                            else 0,
-                            "remark": profile.get("remark"),
-                            "proxy": profile.get("proxy"),
-                        }
-                    )
+                    accounts.append(self._build_account_entry(account_name, session_file))
             else:
                 for session_file in self.session_dir.glob("*.session"):
                     account_name = session_file.stem  # 文件名（不含扩展名）
-                    profile = get_account_profile(account_name)
 
                     if account_name in pending_accounts:
                         continue
 
-                    accounts.append(
-                        {
-                            "name": account_name,
-                            "session_file": str(session_file),
-                            "exists": session_file.exists(),
-                            "size": session_file.stat().st_size
-                            if session_file.exists()
-                            else 0,
-                            "remark": profile.get("remark"),
-                            "proxy": profile.get("proxy"),
-                        }
-                    )
+                    accounts.append(self._build_account_entry(account_name, session_file))
 
             self._accounts_cache = sorted(accounts, key=lambda x: x["name"])
             return self._accounts_cache
@@ -429,32 +422,25 @@ class TelegramService:
             return False
 
         try:
-            removed_any = False
             if session_file.exists():
                 session_file.unlink()
-                removed_any = True
 
             # 同时删除可能存在的 .session-journal 文件
             if journal_file.exists():
                 journal_file.unlink()
-                removed_any = True
 
             # 删除 shm 和 wal 文件 (sqlite3)
             if shm_file.exists():
                 shm_file.unlink()
-                removed_any = True
 
             if wal_file.exists():
                 wal_file.unlink()
-                removed_any = True
 
             if session_string_file.exists():
                 session_string_file.unlink()
-                removed_any = True
 
             if has_session_string or account_in_store:
                 delete_account_session_string(account_name)
-                removed_any = True
 
             # 确保 .session_string 残留被清理
             delete_session_string_file(self.session_dir, account_name)

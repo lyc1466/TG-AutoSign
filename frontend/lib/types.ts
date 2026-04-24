@@ -36,4 +36,12 @@ export type TokenResponse = {
   token_type: string;
 };
 
+export type NotificationChannel = "global" | "custom" | "disabled";
+
+export type TelegramNotificationConfig = {
+  has_config: boolean;
+  bot_token_masked?: string | null;
+  chat_id?: string | null;
+};
+
 

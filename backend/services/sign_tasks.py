@@ -19,6 +19,10 @@ from backend.core.runtime_config import (
     get_sign_task_runtime_config,
     get_telegram_api_runtime_config,
 )
+from backend.services.notifications import (
+    dispatch_notification,
+    get_notification_service,
+)
 from backend.utils.account_locks import get_account_lock
 from backend.utils.proxy import resolve_proxy_dict
 from backend.utils.tg_session import (
@@ -31,6 +35,7 @@ from backend.utils.tg_session import (
 from tg_signer.core import UserSigner, get_client
 
 settings = get_settings()
+logger = logging.getLogger("backend.sign_tasks")
 
 
 def _normalize_chat_action_interval(chat: dict, config_version) -> dict:
@@ -1517,8 +1522,8 @@ class SignTaskService:
             self._active_logs[task_key].append(error_msg)
             # 打印堆栈以便调试
             traceback.print_exc()
-            logger = logging.getLogger("backend")
-            logger.error(error_msg)
+            error_logger = logging.getLogger("backend")
+            error_logger.error(error_msg)
         finally:
             self._account_last_run_end[account_name] = time.time()
             self._active_tasks[task_key] = False
@@ -1560,6 +1565,7 @@ class SignTaskService:
                                 break
 
             msg = error_msg if not success else last_reply
+            finished_at = datetime.now()
             self._save_run_info(
                 task_name,
                 success,
@@ -1567,6 +1573,22 @@ class SignTaskService:
                 account_name,
                 flow_logs=final_logs,
                 message_events=final_message_events,
+            )
+            dispatch_notification(
+                get_notification_service().send_sign_task_completion(
+                    task_name=task_name,
+                    account_name=account_name,
+                    success=success,
+                    summary=msg,
+                    output=output_str,
+                    message_events=final_message_events,
+                    finished_at=finished_at,
+                ),
+                logger=logger,
+                description=(
+                    "Failed to send sign task completion notification "
+                    f"for account={account_name}, task={task_name}"
+                ),
             )
 
             # 延迟清理日志（同一 task_key 仅保留一个 cleanup 协程）

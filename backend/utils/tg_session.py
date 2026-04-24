@@ -10,6 +10,7 @@ from backend.core.config import get_settings
 from backend.core.runtime_config import get_session_runtime_config
 
 _GLOBAL_SEMAPHORE: Optional[asyncio.Semaphore] = None
+_VALID_NOTIFICATION_CHANNELS = {"global", "custom", "disabled"}
 
 
 def get_session_mode() -> str:
@@ -111,9 +112,15 @@ def get_account_profile(account_name: str) -> dict[str, Any]:
     entry = data.get("accounts", {}).get(account_name)
     if not isinstance(entry, dict):
         return {}
+    notification_channel = entry.get("notification_channel")
+    if notification_channel not in _VALID_NOTIFICATION_CHANNELS:
+        notification_channel = "global"
     return {
         "remark": entry.get("remark"),
         "proxy": entry.get("proxy"),
+        "notification_channel": notification_channel,
+        "notification_bot_token": entry.get("notification_bot_token"),
+        "notification_chat_id": entry.get("notification_chat_id"),
     }
 
 
@@ -134,7 +141,13 @@ def get_account_remark(account_name: str) -> Optional[str]:
 
 
 def set_account_profile(
-    account_name: str, *, remark: Optional[str] = None, proxy: Optional[str] = None
+    account_name: str,
+    *,
+    remark: Optional[str] = None,
+    proxy: Optional[str] = None,
+    notification_channel: Optional[str] = None,
+    notification_bot_token: Optional[str] = None,
+    notification_chat_id: Optional[str] = None,
 ) -> None:
     data = _load_account_store()
     accounts = data.get("accounts")
@@ -148,6 +161,29 @@ def set_account_profile(
         entry["remark"] = remark.strip() if isinstance(remark, str) else remark
     if proxy is not None:
         entry["proxy"] = proxy.strip() if isinstance(proxy, str) else proxy
+    if notification_channel is not None:
+        normalized_channel = (
+            notification_channel.strip()
+            if isinstance(notification_channel, str)
+            else notification_channel
+        )
+        if normalized_channel not in _VALID_NOTIFICATION_CHANNELS:
+            raise ValueError(
+                "notification_channel must be one of: global, custom, disabled"
+            )
+        entry["notification_channel"] = normalized_channel
+    if notification_bot_token is not None:
+        entry["notification_bot_token"] = (
+            notification_bot_token.strip()
+            if isinstance(notification_bot_token, str)
+            else notification_bot_token
+        )
+    if notification_chat_id is not None:
+        entry["notification_chat_id"] = (
+            notification_chat_id.strip()
+            if isinstance(notification_chat_id, str)
+            else notification_chat_id
+        )
     entry["updated_at"] = datetime.utcnow().isoformat()
     accounts[account_name] = entry
     _save_account_store(data)

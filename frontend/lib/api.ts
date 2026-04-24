@@ -1,4 +1,11 @@
-import { Account, Task, TaskLog, TokenResponse } from "./types";
+import {
+  Account,
+  NotificationChannel,
+  Task,
+  TaskLog,
+  TelegramNotificationConfig,
+  TokenResponse,
+} from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
 
@@ -178,6 +185,10 @@ export interface AccountInfo {
   size: number;
   remark?: string | null;
   proxy?: string | null;
+  notification_channel?: NotificationChannel | null;
+  notification_has_custom_token?: boolean;
+  notification_bot_token_masked?: string | null;
+  notification_chat_id?: string | null;
 }
 
 export interface AccountStatusCheckRequest {
@@ -232,7 +243,14 @@ export const checkAccountExists = (token: string, accountName: string) =>
 export const updateAccount = (
   token: string,
   accountName: string,
-  data: { remark?: string | null; proxy?: string | null }
+  data: {
+    remark?: string | null;
+    proxy?: string | null;
+    notification_channel?: NotificationChannel;
+    notification_bot_token?: string | null;
+    notification_chat_id?: string | null;
+    keep_existing_notification_token?: boolean;
+  }
 ) =>
   request<{ success: boolean; message: string; account?: AccountInfo | null }>(`/accounts/${accountName}`, {
     method: "PATCH",
@@ -530,6 +548,11 @@ export interface TelegramConfig {
   default_api_hash: string;
 }
 
+export interface TelegramNotificationTestResult {
+  success: boolean;
+  message: string;
+}
+
 export const getTelegramConfig = (token: string) =>
   request<TelegramConfig>("/config/telegram", {}, token);
 
@@ -545,6 +568,32 @@ export const saveTelegramConfig = (
 export const resetTelegramConfig = (token: string) =>
   request<{ success: boolean; message: string }>("/config/telegram", {
     method: "DELETE",
+  }, token);
+
+export const getTelegramNotificationConfig = (token: string) =>
+  request<TelegramNotificationConfig>("/config/telegram-notification", {}, token);
+
+export const saveTelegramNotificationConfig = (
+  token: string,
+  payload: {
+    bot_token?: string | null;
+    chat_id: string;
+    keep_existing_token?: boolean;
+  }
+) =>
+  request<{ success: boolean; message: string }>("/config/telegram-notification", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }, token);
+
+export const deleteTelegramNotificationConfig = (token: string) =>
+  request<{ success: boolean; message: string }>("/config/telegram-notification", {
+    method: "DELETE",
+  }, token);
+
+export const testTelegramNotificationConfig = (token: string) =>
+  request<TelegramNotificationTestResult>("/config/telegram-notification/test", {
+    method: "POST",
   }, token);
 
 // ============ 账号日志 ============
