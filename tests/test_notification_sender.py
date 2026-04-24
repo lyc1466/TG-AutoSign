@@ -2,6 +2,8 @@ import asyncio
 from datetime import datetime
 from types import SimpleNamespace
 
+import pytest
+
 import backend.services.notifications as notifications_module
 
 
@@ -136,6 +138,18 @@ def test_build_sign_task_message_includes_recent_messages_and_truncates():
     assert len(message) <= 3500
 
 
+def test_recent_message_lines_keep_contiguous_numbering():
+    lines = notifications_module._recent_message_lines(
+        [
+            {"summary": "Bot: 第一条"},
+            {},
+            {"text": "Bot: 第二条"},
+        ]
+    )
+
+    assert lines == ["1. Bot: 第一条", "2. Bot: 第二条"]
+
+
 def test_dispatch_notification_uses_timeout_and_logs_failures(monkeypatch):
     captured = {}
     logged = []
@@ -176,3 +190,62 @@ def test_dispatch_notification_uses_timeout_and_logs_failures(monkeypatch):
 
     assert captured["timeout"] == 5
     assert logged == ["notification dispatch failed"]
+
+
+def test_dispatch_notification_ignores_cancelled_tasks(monkeypatch):
+    logged = []
+
+    class DummyTask:
+        def add_done_callback(self, callback):
+            callback(self)
+
+        def result(self):
+            raise AssertionError("result() should not be called for cancelled tasks")
+
+        def cancelled(self):
+            return True
+
+    class NoopAwaitable:
+        def __await__(self):
+            if False:
+                yield None
+            return None
+
+    def fake_create_task(coro):
+        coro.close()
+        return DummyTask()
+
+    monkeypatch.setattr(notifications_module.asyncio, "create_task", fake_create_task)
+
+    logger = SimpleNamespace(
+        exception=lambda message, *args, **kwargs: logged.append(message)
+    )
+
+    notifications_module.dispatch_notification(
+        NoopAwaitable(),
+        logger=logger,
+        description="notification dispatch cancelled",
+    )
+
+    assert logged == []
+
+
+def test_send_message_propagates_errors_for_contextual_logging(monkeypatch):
+    service = notifications_module.NotificationService()
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, json, timeout):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(notifications_module.httpx, "AsyncClient", FakeClient)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        asyncio.run(
+            service._send_message(bot_token="123:abc", chat_id="-1001", text="done")
+        )

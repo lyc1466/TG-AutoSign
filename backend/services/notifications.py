@@ -72,7 +72,7 @@ def _recent_message_lines(
 
     selected = message_events[-max_items:]
     lines: list[str] = []
-    for index, event in enumerate(selected, start=1):
+    for event in selected:
         if not isinstance(event, dict):
             continue
         summary = _clean_optional(event.get("summary"))
@@ -84,7 +84,7 @@ def _recent_message_lines(
             continue
         if len(summary) > 200:
             summary = summary[:197] + "..."
-        lines.append(f"{index}. {summary}")
+        lines.append(f"{len(lines) + 1}. {summary}")
     return lines
 
 
@@ -104,8 +104,12 @@ def dispatch_notification(
     task = asyncio.create_task(runner())
 
     def consume_result(done_task: asyncio.Task[None]) -> None:
+        if done_task.cancelled():
+            return
         try:
             done_task.result()
+        except asyncio.CancelledError:
+            return
         except Exception:
             logger.exception("%s", description)
 
@@ -196,22 +200,18 @@ class NotificationService:
         )
 
     async def _send_message(self, *, bot_token: str, chat_id: str, text: str) -> bool:
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                    json={
-                        "chat_id": chat_id,
-                        "text": text,
-                        "disable_web_page_preview": True,
-                    },
-                    timeout=10,
-                )
-                response.raise_for_status()
-            return True
-        except Exception:
-            logger.exception("Failed to send Telegram notification")
-            return False
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": text,
+                    "disable_web_page_preview": True,
+                },
+                timeout=10,
+            )
+            response.raise_for_status()
+        return True
 
     async def send_regular_task_completion(
         self,

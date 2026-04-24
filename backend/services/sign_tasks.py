@@ -1565,6 +1565,7 @@ class SignTaskService:
                                 break
 
             msg = error_msg if not success else last_reply
+            finished_at = datetime.now()
             self._save_run_info(
                 task_name,
                 success,
@@ -1581,6 +1582,7 @@ class SignTaskService:
                     summary=msg,
                     output=output_str,
                     message_events=final_message_events,
+                    finished_at=finished_at,
                 ),
                 logger=logger,
                 description=(

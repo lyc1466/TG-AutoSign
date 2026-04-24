@@ -2,6 +2,7 @@ import asyncio
 import importlib
 import sys
 import types
+from datetime import datetime
 from types import SimpleNamespace
 
 import backend.core.config as config_module
@@ -154,3 +155,46 @@ def test_run_task_with_logs_sends_sign_notification_on_failure(monkeypatch, tmp_
     assert "sign failed" in captured["summary"]
     assert len(scheduled) == 1
     assert scheduled[0]["timeout"] == 5
+
+
+def test_run_task_with_logs_passes_completion_timestamp_to_notification(
+    monkeypatch, tmp_path
+):
+    sign_tasks_module, service = _build_service(monkeypatch, tmp_path)
+    captured = {}
+    finished_at = datetime(2026, 4, 24, 23, 47, 49)
+
+    class FakeDateTime:
+        @staticmethod
+        def now():
+            return finished_at
+
+    class FakeSigner:
+        def __init__(self, *args, **kwargs):
+            self._callback = kwargs["message_event_callback"]
+
+        async def run_once(self, num_of_dialogs=20):
+            await self._callback({"summary": "Bot: 签到成功，积分 +1"})
+
+    def fake_send(**kwargs):
+        captured.update(kwargs)
+        return _CapturedAwaitable()
+
+    monkeypatch.setattr(sign_tasks_module, "datetime", FakeDateTime)
+    monkeypatch.setattr(sign_tasks_module, "BackendUserSigner", FakeSigner)
+    monkeypatch.setattr(service, "_save_run_info", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        sign_tasks_module,
+        "get_notification_service",
+        lambda: SimpleNamespace(send_sign_task_completion=fake_send),
+    )
+    monkeypatch.setattr(
+        sign_tasks_module,
+        "dispatch_notification",
+        lambda awaitable, *, logger, description, timeout=5: None,
+    )
+
+    result = asyncio.run(service.run_task_with_logs(account_name="alice", task_name="linuxdo"))
+
+    assert result["success"] is True
+    assert captured["finished_at"] == finished_at
