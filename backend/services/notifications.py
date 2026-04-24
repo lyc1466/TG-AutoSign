@@ -98,6 +98,8 @@ def dispatch_notification(
     async def runner() -> None:
         try:
             await asyncio.wait_for(awaitable, timeout=timeout)
+        except asyncio.CancelledError:
+            return
         except Exception:
             logger.exception(description)
 

@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 import backend.services.telegram as telegram_module
+import backend.utils.masking as masking_module
 import backend.utils.tg_session as tg_session_module
 
 
@@ -82,6 +83,10 @@ def test_list_accounts_exposes_masked_notification_metadata(monkeypatch, tmp_pat
     assert account["notification_bot_token_masked"] == "1234*********oken"
     assert account["notification_chat_id"] == "-100100200300"
     assert "notification_bot_token" not in account
+
+
+def test_mask_secret_obscures_short_values():
+    assert masking_module.mask_secret("123456789") == "12****89"
 
 
 def test_update_account_returns_400_for_invalid_notification_channel(monkeypatch):

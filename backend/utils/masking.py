@@ -9,4 +9,8 @@ def mask_secret(value: Optional[str]) -> Optional[str]:
     value = value.strip()
     if not value:
         return None
-    return value[:4] + "*" * (len(value) - 8) + value[-4:] if len(value) > 8 else "****"
+    if len(value) <= 8:
+        return "****"
+    if len(value) <= 12:
+        return value[:2] + "****" + value[-2:]
+    return value[:4] + "*" * (len(value) - 8) + value[-4:]

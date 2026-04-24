@@ -24,6 +24,7 @@ import {
   AccountLog,
   SignTask,
 } from "../../lib/api";
+import type { NotificationChannel } from "../../lib/types";
 import {
   Lightning,
   Plus,
@@ -115,7 +116,7 @@ export default function Dashboard() {
     account_name: "",
     remark: "",
     proxy: "",
-    notification_channel: "global" as "global" | "custom" | "disabled",
+    notification_channel: "global" as NotificationChannel,
     notification_bot_token: "",
     notification_bot_token_masked: "",
     notification_has_custom_token: false,

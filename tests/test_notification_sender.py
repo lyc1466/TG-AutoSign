@@ -230,6 +230,52 @@ def test_dispatch_notification_ignores_cancelled_tasks(monkeypatch):
     assert logged == []
 
 
+def test_dispatch_notification_ignores_cancelled_runner(monkeypatch):
+    logged = []
+
+    class FakeCancelledError(Exception):
+        pass
+
+    class DummyTask:
+        def add_done_callback(self, callback):
+            callback(self)
+
+        def result(self):
+            return None
+
+        def cancelled(self):
+            return False
+
+    class NoopAwaitable:
+        def __await__(self):
+            if False:
+                yield None
+            return None
+
+    async def fake_wait_for(awaitable, timeout):
+        raise FakeCancelledError("cancelled")
+
+    def fake_create_task(coro):
+        asyncio.run(coro)
+        return DummyTask()
+
+    monkeypatch.setattr(notifications_module.asyncio, "CancelledError", FakeCancelledError)
+    monkeypatch.setattr(notifications_module.asyncio, "wait_for", fake_wait_for)
+    monkeypatch.setattr(notifications_module.asyncio, "create_task", fake_create_task)
+
+    logger = SimpleNamespace(
+        exception=lambda message, *args, **kwargs: logged.append(message)
+    )
+
+    notifications_module.dispatch_notification(
+        NoopAwaitable(),
+        logger=logger,
+        description="notification dispatch cancelled in runner",
+    )
+
+    assert logged == []
+
+
 def test_send_message_propagates_errors_for_contextual_logging(monkeypatch):
     service = notifications_module.NotificationService()
 
