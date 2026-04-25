@@ -176,16 +176,20 @@ class MessageSenderInfo(BaseModel):
     id: Optional[int] = None
     username: str = ""
     display_name: str = ""
+    is_self: bool = False
 
 
 class MessageEventItem(BaseModel):
     event_id: str = ""
     event_type: str = ""
     event_time: str = ""
+    message_id: Optional[int] = None
     chat_id: Optional[int] = None
     chat_title: str = ""
     chat_username: str = ""
     sender: MessageSenderInfo = Field(default_factory=MessageSenderInfo)
+    recipient: MessageSenderInfo = Field(default_factory=MessageSenderInfo)
+    is_outgoing: bool = False
     text: str = ""
     caption: str = ""
     summary: str = ""

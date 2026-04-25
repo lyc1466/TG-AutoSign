@@ -657,16 +657,20 @@ export interface SignTaskMessageSender {
   id?: number | null;
   username?: string;
   display_name?: string;
+  is_self?: boolean;
 }
 
 export interface SignTaskMessageEvent {
   event_id: string;
   event_type: string;
   event_time: string;
+  message_id?: number | null;
   chat_id?: number | null;
   chat_title?: string;
   chat_username?: string;
   sender?: SignTaskMessageSender;
+  recipient?: SignTaskMessageSender;
+  is_outgoing?: boolean;
   text?: string;
   caption?: string;
   summary?: string;

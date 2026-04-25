@@ -260,10 +260,12 @@ class SignTaskService:
             "event_id": str(event.get("event_id", "") or ""),
             "event_type": str(event.get("event_type", "") or ""),
             "event_time": str(event.get("event_time", "") or ""),
+            "message_id": event.get("message_id"),
             "chat_id": event.get("chat_id"),
             "chat_title": str(event.get("chat_title", "") or ""),
             "chat_username": str(event.get("chat_username", "") or ""),
             "sender": self._normalize_message_sender(event.get("sender")),
+            "recipient": self._normalize_message_sender(event.get("recipient")),
             "is_outgoing": bool(event.get("is_outgoing", False)),
             "text": str(event.get("text", "") or ""),
             "caption": str(event.get("caption", "") or ""),
@@ -304,13 +306,30 @@ class SignTaskService:
                 return events, self._active_message_event_sequences.get(key, 0)
         return [], 0
 
-    def _latest_message_summary(
+    def _incoming_message_summaries(
         self, message_events: Optional[List[Dict[str, Any]]]
-    ) -> str:
+    ) -> List[str]:
         if not isinstance(message_events, list):
-            return ""
-        for event in reversed(message_events):
+            return []
+
+        def _event_key(event: Dict[str, Any]) -> str:
+            message_id = event.get("message_id")
+            chat_id = event.get("chat_id")
+            if message_id is not None:
+                return f"{chat_id}:{message_id}"
+            event_id = str(event.get("event_id", "") or "")
+            parts = event_id.split(":", 3)
+            if len(parts) >= 3 and parts[1] and parts[2]:
+                return f"{parts[1]}:{parts[2]}"
+            return event_id
+
+        summaries: List[str] = []
+        summary_positions: Dict[str, int] = {}
+        for event in message_events:
             if not isinstance(event, dict):
+                continue
+            event_type = str(event.get("event_type", "") or "").strip().lower()
+            if event_type and event_type not in {"message_received", "message_edited"}:
                 continue
             sender = event.get("sender")
             sender_is_self = isinstance(sender, dict) and bool(
@@ -325,8 +344,26 @@ class SignTaskService:
                     or str(event.get("caption", "") or "").strip()
                 )
             if summary:
-                return summary[:200] if len(summary) <= 200 else summary[:197] + "..."
-        return ""
+                summary = summary[:200] if len(summary) <= 200 else summary[:197] + "..."
+                event_key = _event_key(event)
+                if event_key and event_key in summary_positions:
+                    summaries[summary_positions[event_key]] = summary
+                elif event_key:
+                    summary_positions[event_key] = len(summaries)
+                    summaries.append(summary)
+                else:
+                    summaries.append(summary)
+        return summaries
+
+    def _latest_message_summary(
+        self, message_events: Optional[List[Dict[str, Any]]]
+    ) -> str:
+        summaries = self._incoming_message_summaries(message_events)
+        if not summaries:
+            return ""
+
+        summary = f"收到 {len(summaries)} 条回复，最后一条：{summaries[-1]}"
+        return summary[:200] if len(summary) <= 200 else summary[:197] + "..."
 
     def _load_history_entries(
         self, task_name: str, account_name: str = ""
@@ -383,12 +420,15 @@ class SignTaskService:
             if not isinstance(flow_logs, list):
                 flow_logs = []
             message_events = self._normalize_message_events(item.get("message_events"))
+            message = item.get("message", "") or ""
+            if bool(item.get("success", False)):
+                message = self._latest_message_summary(message_events) or message
 
             result.append(
                 {
                     "time": item.get("time", ""),
                     "success": bool(item.get("success", False)),
-                    "message": item.get("message", "") or "",
+                    "message": message,
                     "flow_logs": [str(line) for line in flow_logs],
                     "flow_truncated": bool(item.get("flow_truncated", False)),
                     "flow_line_count": int(item.get("flow_line_count", len(flow_logs))),
@@ -427,8 +467,15 @@ class SignTaskService:
                     # 再次确认 account_name (虽然是从 task 列表来的，但以防万一)
                     for data in data_list:
                         if data.get("account_name") == account_name:
-                            data["task_name"] = task_name
-                            all_history.append(data)
+                            normalized = dict(data)
+                            normalized["task_name"] = task_name
+                            if bool(normalized.get("success", False)):
+                                normalized["message"] = self._latest_message_summary(
+                                    normalized.get("message_events")
+                                ) or (normalized.get("message", "") or "")
+                            else:
+                                normalized["message"] = normalized.get("message", "") or ""
+                            all_history.append(normalized)
             except Exception:
                 continue
 

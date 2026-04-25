@@ -1,11 +1,10 @@
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from types import SimpleNamespace
 
 
 def test_session_runtime_config_reads_mode_no_updates_and_concurrency(monkeypatch):

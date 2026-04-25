@@ -751,6 +751,7 @@ class BaseUserWorker(Generic[ConfigT]):
         :return:
         """
         message = await self.app.send_message(chat_id, text, **kwargs)
+        await self.emit_message_event(message, "message_sent")
         if delete_after is not None:
             self.log(
                 f"Message「{text}」 to {chat_id} will be deleted after {delete_after} seconds."
@@ -783,6 +784,8 @@ class BaseUserWorker(Generic[ConfigT]):
                 level="WARNING",
             )
         message = await self.app.send_dice(chat_id, emoji, **kwargs)
+        if message is not None:
+            await self.emit_message_event(message, "message_sent")
         if message and delete_after is not None:
             self.log(
                 f"Dice「{emoji}」 to {chat_id} will be deleted after {delete_after} seconds."
@@ -910,7 +913,19 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
 
     @staticmethod
     def _message_event_summary(message: Message) -> str:
-        summary = message.text or message.caption or readable_message(message)
+        summary = message.text or message.caption
+        if not summary:
+            dice = getattr(message, "dice", None)
+            dice_emoji = getattr(dice, "emoji", "") if dice else ""
+            dice_value = getattr(dice, "value", None) if dice else None
+            if dice_emoji:
+                summary = (
+                    f"{dice_emoji} ({dice_value})"
+                    if isinstance(dice_value, int)
+                    else dice_emoji
+                )
+        if not summary:
+            summary = readable_message(message)
         summary = re.sub(r"\s+", " ", summary).strip()
         if len(summary) > 200:
             summary = summary[:197] + "..."
@@ -923,35 +938,137 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
             return event_time.isoformat()
         return ""
 
-    def build_message_event(self, message: Message, event_type: str) -> dict[str, Any]:
+    @staticmethod
+    def _entity_display_name(entity: Any) -> str:
+        if entity is None:
+            return ""
+        first_name = getattr(entity, "first_name", None) or ""
+        last_name = getattr(entity, "last_name", None) or ""
+        full_name = " ".join(part for part in [first_name, last_name] if part).strip()
+        if full_name:
+            return full_name
+        return (
+            getattr(entity, "title", None)
+            or getattr(entity, "username", None)
+            or (str(getattr(entity, "id", "")) if getattr(entity, "id", None) is not None else "")
+        )
+
+    def _message_chat_identity(self, message: Message) -> tuple[int, str, str]:
+        chat = message.chat
+        chat_id = chat.id
+        chat_title = getattr(chat, "title", None) or ""
+        chat_username = getattr(chat, "username", None) or ""
+
+        if not chat_title or not chat_username:
+            cached_chat = self._find_cached_chat(chat_id, chat_title or chat_username or None)
+            if cached_chat:
+                chat_title = chat_title or str(cached_chat.get("title") or "")
+                chat_username = chat_username or str(cached_chat.get("username") or "")
+
+        return chat_id, chat_title, chat_username
+
+    def _message_sender_identity(
+        self, message: Message, event_type: str
+    ) -> tuple[Optional[int], str, str, bool]:
+        is_outgoing = event_type == "message_sent" or bool(
+            getattr(message, "outgoing", False)
+        )
         sender = getattr(message, "from_user", None)
         sender_chat = getattr(message, "sender_chat", None)
+
+        if sender is None and sender_chat is None and is_outgoing:
+            sender = getattr(self, "me", None) or getattr(self.app, "me", None)
+
         sender_id = getattr(sender, "id", None) or getattr(sender_chat, "id", None)
         sender_username = getattr(sender, "username", None) or getattr(
             sender_chat, "username", None
         )
-        sender_name = (
-            getattr(sender, "first_name", None)
-            or getattr(sender_chat, "title", None)
-            or sender_username
-            or (str(sender_id) if sender_id is not None else "")
+        sender_name = self._entity_display_name(sender) or self._entity_display_name(
+            sender_chat
+        )
+
+        me = getattr(self, "me", None) or getattr(self.app, "me", None)
+        is_self = bool(getattr(sender, "is_self", False))
+        if me is not None and sender_id is not None and sender_id == getattr(me, "id", None):
+            is_self = True
+        elif sender is me:
+            is_self = True
+
+        return sender_id, sender_username or "", sender_name, is_self
+
+    @staticmethod
+    def _chat_entity_display_name(chat_title: str, chat_username: str, chat_id: int) -> str:
+        return chat_title or chat_username or str(chat_id)
+
+    def _self_identity(self) -> tuple[Optional[int], str, str, bool]:
+        me = getattr(self, "me", None) or getattr(self.app, "me", None)
+        if me is None:
+            return None, "", "", True
+        return (
+            getattr(me, "id", None),
+            getattr(me, "username", None) or "",
+            self._entity_display_name(me),
+            True,
+        )
+
+    def _message_recipient_identity(
+        self,
+        message: Message,
+        event_type: str,
+        chat_id: int,
+        chat_title: str,
+        chat_username: str,
+    ) -> tuple[Optional[int], str, str, bool]:
+        is_outgoing = event_type == "message_sent" or bool(
+            getattr(message, "outgoing", False)
+        )
+        chat_type = str(getattr(message.chat, "type", "") or "").lower()
+        is_direct_chat = "private" in chat_type or "bot" in chat_type
+
+        if is_outgoing or not is_direct_chat:
+            return (
+                chat_id,
+                chat_username,
+                self._chat_entity_display_name(chat_title, chat_username, chat_id),
+                False,
+            )
+
+        return self._self_identity()
+
+    def build_message_event(self, message: Message, event_type: str) -> dict[str, Any]:
+        chat_id, chat_title, chat_username = self._message_chat_identity(message)
+        sender_id, sender_username, sender_name, sender_is_self = (
+            self._message_sender_identity(message, event_type)
+        )
+        recipient_id, recipient_username, recipient_name, recipient_is_self = (
+            self._message_recipient_identity(
+                message, event_type, chat_id, chat_title, chat_username
+            )
         )
         event_time = self._message_event_time(message)
         event_marker = event_time or str(getattr(message, "id", ""))
         return {
-            "event_id": f"{event_type}:{message.chat.id}:{message.id}:{event_marker}",
+            "event_id": f"{event_type}:{chat_id}:{message.id}:{event_marker}",
             "event_type": event_type,
             "event_time": event_time,
-            "chat_id": message.chat.id,
-            "chat_title": getattr(message.chat, "title", None) or "",
-            "chat_username": getattr(message.chat, "username", None) or "",
+            "message_id": getattr(message, "id", None),
+            "chat_id": chat_id,
+            "chat_title": chat_title,
+            "chat_username": chat_username,
             "sender": {
                 "id": sender_id,
-                "username": sender_username or "",
+                "username": sender_username,
                 "display_name": sender_name,
-                "is_self": bool(getattr(sender, "is_self", False)),
+                "is_self": sender_is_self,
             },
-            "is_outgoing": bool(getattr(message, "outgoing", False)),
+            "recipient": {
+                "id": recipient_id,
+                "username": recipient_username,
+                "display_name": recipient_name,
+                "is_self": recipient_is_self,
+            },
+            "is_outgoing": bool(getattr(message, "outgoing", False))
+            or event_type == "message_sent",
             "text": message.text or "",
             "caption": message.caption or "",
             "summary": self._message_event_summary(message),

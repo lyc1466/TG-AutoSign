@@ -8,8 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import backend.services.telegram as telegram_module
-from backend.utils import proxy as proxy_utils
+import backend.services.telegram as telegram_module  # noqa: E402
+from backend.utils import proxy as proxy_utils  # noqa: E402
 
 
 def test_resolve_proxy_dict_falls_back_to_env(monkeypatch):

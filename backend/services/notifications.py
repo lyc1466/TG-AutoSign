@@ -65,15 +65,35 @@ def _coerce_summary(summary: Optional[str], output: Optional[str], default: str)
 
 
 def _recent_message_lines(
-    message_events: Optional[list[dict[str, Any]]], max_items: int = 3
-) -> list[str]:
+    message_events: Optional[list[dict[str, Any]]], max_chars: int = 1800
+) -> tuple[list[str], int, bool]:
     if not isinstance(message_events, list):
-        return []
+        return [], 0, False
 
-    selected = message_events[-max_items:]
-    lines: list[str] = []
-    for event in selected:
+    def _event_key(event: dict[str, Any]) -> str:
+        message_id = event.get("message_id")
+        chat_id = event.get("chat_id")
+        if message_id is not None:
+            return f"{chat_id}:{message_id}"
+        event_id = str(event.get("event_id", "") or "")
+        parts = event_id.split(":", 3)
+        if len(parts) >= 3 and parts[1] and parts[2]:
+            return f"{parts[1]}:{parts[2]}"
+        return event_id
+
+    summaries: list[str] = []
+    summary_positions: dict[str, int] = {}
+    for event in message_events:
         if not isinstance(event, dict):
+            continue
+        event_type = str(event.get("event_type", "") or "").strip().lower()
+        if event_type and event_type not in {"message_received", "message_edited"}:
+            continue
+        sender = event.get("sender")
+        sender_is_self = isinstance(sender, dict) and bool(
+            sender.get("is_self", False)
+        )
+        if bool(event.get("is_outgoing", False)) or sender_is_self:
             continue
         summary = _clean_optional(event.get("summary"))
         if not summary:
@@ -84,8 +104,30 @@ def _recent_message_lines(
             continue
         if len(summary) > 200:
             summary = summary[:197] + "..."
-        lines.append(f"{len(lines) + 1}. {summary}")
-    return lines
+        event_key = _event_key(event)
+        if event_key and event_key in summary_positions:
+            summaries[summary_positions[event_key]] = summary
+        elif event_key:
+            summary_positions[event_key] = len(summaries)
+            summaries.append(summary)
+        else:
+            summaries.append(summary)
+
+    if not summaries:
+        return [], 0, False
+
+    selected_lines: list[str] = []
+    total_length = 0
+    total_messages = len(summaries)
+    for index, summary in reversed(list(enumerate(summaries, start=1))):
+        line = f"{index}. {summary}"
+        extra_length = len(line) + (1 if selected_lines else 0)
+        if selected_lines and total_length + extra_length > max_chars:
+            return list(reversed(selected_lines)), total_messages, True
+        selected_lines.append(line)
+        total_length += extra_length
+
+    return list(reversed(selected_lines)), total_messages, False
 
 
 def dispatch_notification(
@@ -170,10 +212,14 @@ def build_sign_task_message(
         f"摘要：{summary_text}",
     ]
 
-    recent_messages = _recent_message_lines(message_events)
+    recent_messages, total_messages, truncated = _recent_message_lines(message_events)
     if recent_messages:
         lines.append("")
-        lines.append("最近消息：")
+        header = f"最近消息（共 {total_messages} 条"
+        if truncated:
+            header += f"，仅展示最后 {len(recent_messages)} 条"
+        header += "）："
+        lines.append(header)
         lines.extend(recent_messages)
 
     return _truncate_text("\n".join(lines))

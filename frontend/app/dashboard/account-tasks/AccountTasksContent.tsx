@@ -19,6 +19,7 @@ import {
     importSignTasks,
     SignTask,
     SignTaskHistoryItem,
+    SignTaskMessageEvent,
     ChatInfo,
     CreateSignTaskRequest,
 } from "../../../lib/api";
@@ -258,6 +259,7 @@ export default function AccountTasksContent() {
     const [historyTaskName, setHistoryTaskName] = useState<string | null>(null);
     const [historyLogs, setHistoryLogs] = useState<SignTaskHistoryItem[]>([]);
     const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyTab, setHistoryTab] = useState<"messages" | "logs">("messages");
 
     const addToastRef = useRef(addToast);
     const tRef = useRef(t);
@@ -393,6 +395,56 @@ export default function AccountTasksContent() {
         }
         return [4, 5, 6, 7].includes(actionId);
     }, []);
+
+    const formatPartyLabel = useCallback((
+        party?: { id?: number | null; username?: string; display_name?: string },
+        fallback?: { id?: number | null; username?: string; display_name?: string },
+        emptyLabel?: string,
+    ) => {
+        const id = party?.id ?? fallback?.id;
+        const displayName = String(party?.display_name || fallback?.display_name || "").trim();
+        const username = String(party?.username || fallback?.username || "").trim().replace(/^@/, "");
+
+        if (displayName && username && id !== undefined && id !== null) {
+            return `${displayName} (@${username}, ${id})`;
+        }
+        if (displayName && id !== undefined && id !== null && displayName !== String(id)) {
+            return `${displayName} (${id})`;
+        }
+        if (username && id !== undefined && id !== null) {
+            return `@${username} (${id})`;
+        }
+        if (displayName) return displayName;
+        if (username) return `@${username}`;
+        if (id !== undefined && id !== null) return String(id);
+        return emptyLabel || t("unknown_sender");
+    }, [t]);
+
+    const describeMessageEvent = useCallback((event: SignTaskMessageEvent) => {
+        const senderName = formatPartyLabel(event.sender, undefined, t("unknown_sender"));
+        const recipientName = formatPartyLabel(
+            event.recipient,
+            {
+                id: event.chat_id,
+                username: event.chat_username,
+                display_name: event.chat_title,
+            },
+            t("unknown_chat"),
+        );
+        const body = event.text || event.caption || event.summary || t("task_monitor_no_messages");
+        const typeLabel = event.event_type === "message_sent"
+            ? t("task_message_event_sent")
+            : event.event_type === "message_edited"
+                ? t("task_message_event_edited")
+                : t("task_message_event_received");
+
+        return {
+            senderName: String(senderName),
+            recipientName: String(recipientName),
+            body,
+            typeLabel,
+        };
+    }, [formatPartyLabel, t]);
 
     const loadData = useCallback(async (tokenStr: string) => {
         try {
@@ -585,6 +637,11 @@ export default function AccountTasksContent() {
         try {
             const logs = await getSignTaskHistory(token, task.name, accountName, 30);
             setHistoryLogs(logs);
+            setHistoryTab(
+                logs.some((item) => (item.message_events?.length || 0) > 0)
+                    ? "messages"
+                    : "logs"
+            );
         } catch (err: any) {
             addToastRef.current(formatErrorMessage("logs_fetch_failed", err), "error");
         } finally {
@@ -1603,9 +1660,27 @@ export default function AccountTasksContent() {
                                 <div className="w-8 h-8 rounded-lg bg-[#8a3ffc]/20 flex items-center justify-center text-[#b57dff]">
                                     <ListDashes weight="bold" size={18} />
                                 </div>
-                                <h3 className="font-bold tracking-tight">
-                                    {t("task_history_logs_title").replace("{name}", historyTaskName)}
-                                </h3>
+                                <div className="space-y-2">
+                                    <h3 className="font-bold tracking-tight">
+                                        {t("task_history_logs_title").replace("{name}", historyTaskName)}
+                                    </h3>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setHistoryTab("messages")}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${historyTab === "messages" ? "bg-[#8a3ffc] text-white" : "bg-white/5 text-main/60 hover:bg-white/10"}`}
+                                        >
+                                            {t("task_monitor_messages_tab")}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setHistoryTab("logs")}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${historyTab === "logs" ? "bg-[#8a3ffc] text-white" : "bg-white/5 text-main/60 hover:bg-white/10"}`}
+                                        >
+                                            {t("logs")}
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                             <button
                                 onClick={() => setHistoryTaskName(null)}
@@ -1625,47 +1700,103 @@ export default function AccountTasksContent() {
                             ) : (
                                 <div className="space-y-4">
                                     {historyLogs.map((log, i) => (
-                                        <div key={`${log.time}-${i}`} className="rounded-xl border border-white/5 bg-white/5 overflow-hidden">
-                                            <div className="flex justify-between items-center px-3 py-2 border-b border-white/5 text-[10px]">
-                                                <span className="text-main/30">
-                                                    {new Date(log.time).toLocaleString(language === "zh" ? "zh-CN" : "en-US")}
-                                                </span>
-                                                <span className={log.success ? "text-emerald-400" : "text-rose-400"}>
+                                        <details key={`${log.time}-${i}`} className="rounded-xl border border-white/5 bg-white/5 overflow-hidden" open={i === 0}>
+                                            <summary className="flex flex-wrap justify-between items-center gap-3 px-4 py-3 cursor-pointer list-none">
+                                                <div className="min-w-0">
+                                                    <div className="text-main/30 text-[10px]">
+                                                        {new Date(log.time).toLocaleString(language === "zh" ? "zh-CN" : "en-US")}
+                                                    </div>
+                                                    <div className="text-main/80 break-all mt-1">
+                                                        {log.message
+                                                            ? (isZh ? `${t("task_monitor_summary")}：${log.message}` : `${t("task_monitor_summary")}: ${log.message}`)
+                                                            : (isZh
+                                                                ? `任务：${historyTaskName}${log.success ? "执行成功" : "执行失败"}`
+                                                                : `Task: ${historyTaskName} ${log.success ? "succeeded" : "failed"}`)}
+                                                    </div>
+                                                </div>
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${log.success ? "text-emerald-400 border-emerald-500/20 bg-emerald-500/10" : "text-rose-400 border-rose-500/20 bg-rose-500/10"}`}>
                                                     {log.success ? t("success") : t("failure")}
                                                 </span>
-                                            </div>
-                                            <div className="p-3 space-y-1">
-                                                <div className="text-main/90">
-                                                    {isZh
-                                                        ? `任务：${historyTaskName}${log.success ? "执行成功" : "执行失败"}`
-                                                        : `Task: ${historyTaskName} ${log.success ? "succeeded" : "failed"}`}
-                                                </div>
-                                                {log.message ? (
-                                                    <div className="text-main/60 break-all">
-                                                        {isZh ? `机器人消息：${log.message}` : `Bot message: ${log.message}`}
+                                            </summary>
+                                            <div className="px-4 pb-4 border-t border-white/5">
+                                                <div className="pt-4 space-y-3">
+                                                    <div className="text-main/90">
+                                                        {isZh
+                                                            ? `任务：${historyTaskName}${log.success ? "执行成功" : "执行失败"}`
+                                                            : `Task: ${historyTaskName} ${log.success ? "succeeded" : "failed"}`}
                                                     </div>
-                                                ) : null}
-                                                {log.flow_logs && log.flow_logs.length > 0 ? (
-                                                    log.flow_logs.map((line, lineIndex) => (
-                                                        <div key={lineIndex} className="text-main/80 flex gap-2">
-                                                            <span className="text-main/20 select-none w-6 text-right">
-                                                                {(lineIndex + 1).toString().padStart(2, "0")}
-                                                            </span>
-                                                            <span className="break-all">{line}</span>
+                                                    {log.message ? (
+                                                        <div className="text-main/60 break-all">
+                                                            {isZh ? `${t("task_monitor_summary")}：${log.message}` : `${t("task_monitor_summary")}: ${log.message}`}
                                                         </div>
-                                                    ))
-                                                ) : (
-                                                    <div className="text-main/50">
-                                                        {log.message || t("task_history_no_flow")}
-                                                    </div>
-                                                )}
-                                                {log.flow_truncated && (
-                                                    <div className="text-[10px] text-amber-400/90 mt-2">
-                                                        {t("task_history_truncated").replace("{count}", String(log.flow_line_count || 0))}
-                                                    </div>
-                                                )}
+                                                    ) : null}
+                                                    {historyTab === "messages" ? (
+                                                        <div className="space-y-3">
+                                                            <div className="text-[10px] uppercase tracking-wider text-main/30">
+                                                                {t("task_monitor_messages_tab")}
+                                                            </div>
+                                                            {log.message_events && log.message_events.length > 0 ? (
+                                                                <div className="space-y-3">
+                                                                    {log.message_events.map((event, eventIndex) => {
+                                                                        const message = describeMessageEvent(event);
+                                                                        return (
+                                                                            <div
+                                                                                key={event.event_id || `${log.time}-${eventIndex}`}
+                                                                                className="rounded-xl border border-white/5 bg-black/20 p-3"
+                                                                            >
+                                                                                <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] mb-2">
+                                                                                    <span className="px-2 py-0.5 rounded-full bg-[#8a3ffc]/15 text-[#c59bff] border border-[#8a3ffc]/20">
+                                                                                        {message.typeLabel}
+                                                                                    </span>
+                                                                                    <span className="text-main/30">
+                                                                                        {event.event_time ? new Date(event.event_time).toLocaleString(language === "zh" ? "zh-CN" : "en-US") : t("no_data")}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="text-main/50 mb-2">
+                                                                                    {message.senderName} → {message.recipientName}
+                                                                                </div>
+                                                                                <div className="text-main/85 break-words whitespace-pre-wrap">
+                                                                                    {message.body}
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="text-main/40 italic">{t("task_history_no_messages")}</div>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-y-3">
+                                                            <div className="text-[10px] uppercase tracking-wider text-main/30">
+                                                                {t("logs")}
+                                                            </div>
+                                                            {log.flow_logs && log.flow_logs.length > 0 ? (
+                                                                <div className="space-y-1">
+                                                                    {log.flow_logs.map((line, lineIndex) => (
+                                                                        <div key={lineIndex} className="text-main/80 flex gap-2">
+                                                                            <span className="text-main/20 select-none w-6 text-right">
+                                                                                {(lineIndex + 1).toString().padStart(2, "0")}
+                                                                            </span>
+                                                                            <span className="break-all">{line}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="text-main/50">
+                                                                    {log.message || t("task_history_no_flow")}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {log.flow_truncated && historyTab === "logs" && (
+                                                        <div className="text-[10px] text-amber-400/90 mt-2">
+                                                            {t("task_history_truncated").replace("{count}", String(log.flow_line_count || 0))}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
+                                        </details>
                                     ))}
                                 </div>
                             )}

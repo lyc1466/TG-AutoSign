@@ -576,6 +576,26 @@ class AccountLogItem(BaseModel):
 
 
 def _extract_last_bot_message(item: dict) -> str:
+    message_events = item.get("message_events")
+    if isinstance(message_events, list):
+        for event in reversed(message_events):
+            if not isinstance(event, dict):
+                continue
+            summary = str(
+                event.get("summary")
+                or event.get("text")
+                or event.get("caption")
+                or ""
+            ).strip()
+            if not summary:
+                continue
+            sender = event.get("sender")
+            sender_is_self = isinstance(sender, dict) and bool(
+                sender.get("is_self", False)
+            )
+            if not bool(event.get("is_outgoing", False)) and not sender_is_self:
+                return summary
+
     flow_logs = item.get("flow_logs")
     if not isinstance(flow_logs, list):
         return ""

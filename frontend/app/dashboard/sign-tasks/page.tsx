@@ -35,6 +35,72 @@ import { ToastContainer, useToast } from "../../../components/ui/toast";
 import { ThemeLanguageToggle } from "../../../components/ThemeLanguageToggle";
 import { useLanguage } from "../../../context/LanguageContext";
 
+const truncateSummaryText = (text: string, limit = 200) => {
+    if (text.length <= limit) return text;
+    return `${text.slice(0, limit - 3)}...`;
+};
+
+const getMessageEventKey = (event: SignTaskMessageEvent) => {
+    if (event.chat_id !== undefined && event.chat_id !== null && event.message_id !== undefined && event.message_id !== null) {
+        return `${event.chat_id}:${event.message_id}`;
+    }
+    const eventId = String(event.event_id || "").trim();
+    if (!eventId) return "";
+    const parts = eventId.split(":", 4);
+    if (parts.length >= 3 && parts[1] && parts[2]) {
+        return `${parts[1]}:${parts[2]}`;
+    }
+    return eventId;
+};
+
+const getIncomingMessageSummaries = (events: SignTaskMessageEvent[]) => {
+    const replies: string[] = [];
+    const replyPositions = new Map<string, number>();
+
+    for (const event of events) {
+        const eventType = String(event.event_type || "").trim().toLowerCase();
+        if (eventType && eventType !== "message_received" && eventType !== "message_edited") {
+            continue;
+        }
+        if (event.is_outgoing || event.sender?.is_self) {
+            continue;
+        }
+        const summary = String(event.summary || event.text || event.caption || "").trim();
+        if (!summary) {
+            continue;
+        }
+        const clippedSummary = truncateSummaryText(summary);
+        const eventKey = getMessageEventKey(event);
+        if (eventKey && replyPositions.has(eventKey)) {
+            replies[replyPositions.get(eventKey)!] = clippedSummary;
+        } else if (eventKey) {
+            replyPositions.set(eventKey, replies.length);
+            replies.push(clippedSummary);
+        } else {
+            replies.push(clippedSummary);
+        }
+    }
+
+    return replies;
+};
+
+const summarizeIncomingMessages = (
+    events: SignTaskMessageEvent[],
+    language: string,
+) => {
+    const replies = getIncomingMessageSummaries(events);
+
+    if (replies.length === 0) {
+        return "";
+    }
+
+    const summary = language === "zh"
+        ? `收到 ${replies.length} 条回复，最后一条：${replies[replies.length - 1]}`
+        : `Received ${replies.length} replies, last message: ${replies[replies.length - 1]}`;
+
+    return truncateSummaryText(summary);
+};
+
 export default function SignTasksPage() {
     const router = useRouter();
     const { t, language } = useLanguage();
@@ -53,6 +119,7 @@ export default function SignTasksPage() {
     const [historyTask, setHistoryTask] = useState<SignTask | null>(null);
     const [historyLogs, setHistoryLogs] = useState<SignTaskHistoryItem[]>([]);
     const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyTab, setHistoryTab] = useState<"messages" | "logs">("messages");
     const runSocketRef = useRef<WebSocket | null>(null);
     const runResultRef = useRef<{ success: boolean; output: string; error: string } | null>(null);
 
@@ -230,6 +297,11 @@ export default function SignTasksPage() {
         try {
             const logs = await getSignTaskHistory(token, task.name, task.account_name, 30);
             setHistoryLogs(logs);
+            setHistoryTab(
+                logs.some((item) => (item.message_events?.length || 0) > 0)
+                    ? "messages"
+                    : "logs"
+            );
         } catch (err: any) {
             addToast(formatErrorMessage("logs_fetch_failed", err), "error");
         } finally {
@@ -237,26 +309,59 @@ export default function SignTasksPage() {
         }
     };
 
+    const formatPartyLabel = (
+        party?: { id?: number | null; username?: string; display_name?: string },
+        fallback?: { id?: number | null; username?: string; display_name?: string },
+        emptyLabel?: string,
+    ) => {
+        const id = party?.id ?? fallback?.id;
+        const displayName = String(party?.display_name || fallback?.display_name || "").trim();
+        const username = String(party?.username || fallback?.username || "").trim().replace(/^@/, "");
+
+        if (displayName && username && id !== undefined && id !== null) {
+            return `${displayName} (@${username}, ${id})`;
+        }
+        if (displayName && id !== undefined && id !== null && displayName !== String(id)) {
+            return `${displayName} (${id})`;
+        }
+        if (username && id !== undefined && id !== null) {
+            return `@${username} (${id})`;
+        }
+        if (displayName) return displayName;
+        if (username) return `@${username}`;
+        if (id !== undefined && id !== null) return String(id);
+        return emptyLabel || t("unknown_sender");
+    };
+
     const describeMessageEvent = (event: SignTaskMessageEvent) => {
-        const senderName = event.sender?.display_name || event.sender?.username || event.sender?.id || t("unknown_sender");
-        const chatName = event.chat_title || event.chat_username || event.chat_id || t("unknown_chat");
+        const senderName = formatPartyLabel(event.sender, undefined, t("unknown_sender"));
+        const recipientName = formatPartyLabel(
+            event.recipient,
+            {
+                id: event.chat_id,
+                username: event.chat_username,
+                display_name: event.chat_title,
+            },
+            t("unknown_chat"),
+        );
         const body = event.text || event.caption || event.summary || t("task_monitor_no_messages");
-        const typeLabel = event.event_type === "message_edited"
-            ? t("task_message_event_edited")
-            : t("task_message_event_received");
+        const typeLabel = event.event_type === "message_sent"
+            ? t("task_message_event_sent")
+            : event.event_type === "message_edited"
+                ? t("task_message_event_edited")
+                : t("task_message_event_received");
 
         return {
             senderName: String(senderName),
-            chatName: String(chatName),
+            recipientName: String(recipientName),
             body,
             typeLabel,
         };
     };
 
     const latestRunSummary = (() => {
-        const lastMessage = runMessages[runMessages.length - 1];
-        if (lastMessage?.summary) return lastMessage.summary;
-        if (lastMessage?.text) return lastMessage.text;
+        const replySummary = summarizeIncomingMessages(runMessages, language);
+        if (replySummary) return replySummary;
         if (runResult?.error) return runResult.error;
         if (runResult?.success && runLogs.length > 0) return runLogs[runLogs.length - 1];
         return t("logs_waiting");
@@ -583,7 +688,7 @@ export default function SignTasksPage() {
                                                         </span>
                                                     </div>
                                                     <span className="text-main/50">
-                                                        {message.senderName} → {message.chatName}
+                                                        {message.senderName} → {message.recipientName}
                                                     </span>
                                                 </div>
                                                 <div className="text-main/85 break-words whitespace-pre-wrap">
@@ -615,9 +720,27 @@ export default function SignTasksPage() {
                                 <div className="w-8 h-8 rounded-lg bg-[#8a3ffc]/20 flex items-center justify-center text-[#b57dff]">
                                     <ListDashes weight="bold" size={18} />
                                 </div>
-                                <h3 className="font-bold tracking-tight">
-                                    {t("task_history_logs_title").replace("{name}", historyTask.name)}
-                                </h3>
+                                <div className="space-y-2">
+                                    <h3 className="font-bold tracking-tight">
+                                        {t("task_history_logs_title").replace("{name}", historyTask.name)}
+                                    </h3>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setHistoryTab("messages")}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${historyTab === "messages" ? "bg-[#8a3ffc] text-white" : "bg-white/5 text-main/60 hover:bg-white/10"}`}
+                                        >
+                                            {t("task_monitor_messages_tab")}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setHistoryTab("logs")}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${historyTab === "logs" ? "bg-[#8a3ffc] text-white" : "bg-white/5 text-main/60 hover:bg-white/10"}`}
+                                        >
+                                            {t("logs")}
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                             <button
                                 onClick={() => setHistoryTask(null)}
@@ -651,63 +774,68 @@ export default function SignTasksPage() {
                                                     {log.success ? t("success") : t("failure")}
                                                 </span>
                                             </summary>
-                                            <div className="px-4 pb-4 grid grid-cols-1 lg:grid-cols-2 gap-4 border-t border-white/5">
+                                            <div className="px-4 pb-4 border-t border-white/5">
                                                 <div className="pt-4 space-y-3">
-                                                    <div className="text-[10px] uppercase tracking-wider text-main/30">
-                                                        {t("task_monitor_messages_tab")}
-                                                    </div>
-                                                    {log.message_events && log.message_events.length > 0 ? (
-                                                        <div className="space-y-3">
-                                                            {log.message_events.map((event, eventIndex) => {
-                                                                const message = describeMessageEvent(event);
-                                                                return (
-                                                                    <div
-                                                                        key={event.event_id || `${log.time}-${eventIndex}`}
-                                                                        className="rounded-xl border border-white/5 bg-black/20 p-3"
-                                                                    >
-                                                                        <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] mb-2">
-                                                                            <span className="px-2 py-0.5 rounded-full bg-[#8a3ffc]/15 text-[#c59bff] border border-[#8a3ffc]/20">
-                                                                                {message.typeLabel}
-                                                                            </span>
-                                                                            <span className="text-main/30">
-                                                                                {event.event_time ? new Date(event.event_time).toLocaleString(language === "zh" ? "zh-CN" : "en-US") : t("no_data")}
-                                                                            </span>
-                                                                        </div>
-                                                                        <div className="text-main/50 mb-2">
-                                                                            {message.senderName} → {message.chatName}
-                                                                        </div>
-                                                                        <div className="text-main/85 break-words whitespace-pre-wrap">
-                                                                            {message.body}
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    ) : (
-                                                        <div className="text-main/40 italic">{t("task_history_no_messages")}</div>
-                                                    )}
-                                                </div>
-                                                <div className="pt-4 space-y-3">
-                                                    <div className="text-[10px] uppercase tracking-wider text-main/30">
-                                                        {t("logs")}
-                                                    </div>
-                                                    {log.flow_logs && log.flow_logs.length > 0 ? (
-                                                        <div className="space-y-1">
-                                                            {log.flow_logs.map((line, lineIndex) => (
-                                                                <div key={lineIndex} className="text-main/80 flex gap-2">
-                                                                    <span className="text-main/20 select-none w-6 text-right">
-                                                                        {(lineIndex + 1).toString().padStart(2, "0")}
-                                                                    </span>
-                                                                    <span className="break-all">{line}</span>
+                                                    {historyTab === "messages" ? (
+                                                        <>
+                                                            <div className="text-[10px] uppercase tracking-wider text-main/30">
+                                                                {t("task_monitor_messages_tab")}
+                                                            </div>
+                                                            {log.message_events && log.message_events.length > 0 ? (
+                                                                <div className="space-y-3">
+                                                                    {log.message_events.map((event, eventIndex) => {
+                                                                        const message = describeMessageEvent(event);
+                                                                        return (
+                                                                            <div
+                                                                                key={event.event_id || `${log.time}-${eventIndex}`}
+                                                                                className="rounded-xl border border-white/5 bg-black/20 p-3"
+                                                                            >
+                                                                                <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] mb-2">
+                                                                                    <span className="px-2 py-0.5 rounded-full bg-[#8a3ffc]/15 text-[#c59bff] border border-[#8a3ffc]/20">
+                                                                                        {message.typeLabel}
+                                                                                    </span>
+                                                                                    <span className="text-main/30">
+                                                                                        {event.event_time ? new Date(event.event_time).toLocaleString(language === "zh" ? "zh-CN" : "en-US") : t("no_data")}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="text-main/50 mb-2">
+                                                                                {message.senderName} → {message.recipientName}
+                                                                                </div>
+                                                                                <div className="text-main/85 break-words whitespace-pre-wrap">
+                                                                                    {message.body}
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
                                                                 </div>
-                                                            ))}
-                                                        </div>
+                                                            ) : (
+                                                                <div className="text-main/40 italic">{t("task_history_no_messages")}</div>
+                                                            )}
+                                                        </>
                                                     ) : (
-                                                        <div className="text-main/50">
-                                                            {log.message || t("task_history_no_flow")}
-                                                        </div>
+                                                        <>
+                                                            <div className="text-[10px] uppercase tracking-wider text-main/30">
+                                                                {t("logs")}
+                                                            </div>
+                                                            {log.flow_logs && log.flow_logs.length > 0 ? (
+                                                                <div className="space-y-1">
+                                                                    {log.flow_logs.map((line, lineIndex) => (
+                                                                        <div key={lineIndex} className="text-main/80 flex gap-2">
+                                                                            <span className="text-main/20 select-none w-6 text-right">
+                                                                                {(lineIndex + 1).toString().padStart(2, "0")}
+                                                                            </span>
+                                                                            <span className="break-all">{line}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="text-main/50">
+                                                                    {log.message || t("task_history_no_flow")}
+                                                                </div>
+                                                            )}
+                                                        </>
                                                     )}
-                                                    {log.flow_truncated && (
+                                                    {log.flow_truncated && historyTab === "logs" && (
                                                         <div className="text-[10px] text-amber-400/90 mt-2">
                                                             {t("task_history_truncated").replace("{count}", String(log.flow_line_count || 0))}
                                                         </div>
