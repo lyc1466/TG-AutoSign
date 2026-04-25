@@ -3,6 +3,10 @@
 本文件记录当前维护分支的重要功能、修复、配置、部署与文档变更。
 This file records important feature, fix, configuration, deployment, and documentation changes for the current maintained branch.
 
+## 2026-04-25
+
+- 修复 / Fixed: 修复签到任务通知摘要误回退为启动日志的问题，补齐发送型及旧版配置签到任务的消息上下文采集，并避免复用旧的 no_updates client 或将自己发送的消息误记为执行摘要 / Fix sign task notifications falling back to startup logs, restore message context capture for send-type and legacy-config sign tasks, and avoid stale no_updates client reuse or self-authored messages being picked as summaries.
+
 ## 2026-04-24
 
 - 新增 / Added: 普通任务与签到任务支持通过 Telegram 官方 Bot 发送完成通知，支持全局默认配置与账号级覆盖 / Add Telegram Bot completion notifications for regular and sign tasks with global defaults and per-account overrides.

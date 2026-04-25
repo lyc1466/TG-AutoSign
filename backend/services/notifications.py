@@ -56,7 +56,7 @@ def _coerce_summary(summary: Optional[str], output: Optional[str], default: str)
         return normalized_summary
 
     if isinstance(output, str):
-        for line in output.splitlines():
+        for line in reversed(output.splitlines()):
             line = line.strip()
             if line:
                 return line[:200] if len(line) <= 200 else line[:197] + "..."
@@ -158,7 +158,7 @@ def build_sign_task_message(
     summary_text = _coerce_summary(
         summary,
         output,
-        "Success" if success else "Task finished without summary",
+        "任务执行完成" if success else "任务执行失败",
     )
     lines = [
         "[任务完成通知]",

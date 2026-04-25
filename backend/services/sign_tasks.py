@@ -46,6 +46,50 @@ def _normalize_chat_action_interval(chat: dict, config_version) -> dict:
     return normalized
 
 
+def _normalize_legacy_chat_actions(chat: dict) -> dict:
+    normalized = dict(chat)
+    actions = normalized.get("actions")
+    if isinstance(actions, list):
+        return normalized
+
+    normalized_actions: List[Dict[str, Any]] = []
+    sign_text = normalized.get("sign_text")
+    if sign_text:
+        if normalized.get("as_dice"):
+            normalized_actions.append({"action": 2, "dice": sign_text})
+        else:
+            normalized_actions.append({"action": 1, "text": sign_text})
+
+    button_text = str(normalized.get("text_of_btn_to_click", "") or "").strip()
+    if button_text:
+        normalized_actions.append({"action": 3, "text": button_text})
+
+    if bool(normalized.get("choose_option_by_image")):
+        normalized_actions.append({"action": 4})
+
+    if bool(normalized.get("has_calculation_problem")):
+        normalized_actions.append({"action": 5})
+
+    normalized["actions"] = normalized_actions
+    return normalized
+
+
+def _normalize_task_chats(
+    chats: Any, config_version: Optional[int]
+) -> List[Dict[str, Any]]:
+    if not isinstance(chats, list):
+        return []
+
+    normalized_chats: List[Dict[str, Any]] = []
+    for chat in chats:
+        if not isinstance(chat, dict):
+            continue
+        normalized_chat = _normalize_chat_action_interval(chat, config_version)
+        normalized_chat = _normalize_legacy_chat_actions(normalized_chat)
+        normalized_chats.append(normalized_chat)
+    return normalized_chats
+
+
 class TaskLogHandler(logging.Handler):
     """
     自定义日志处理器，将日志实时写入到内存列表中
@@ -136,13 +180,14 @@ class SignTaskService:
         """
         if not isinstance(task_config, dict):
             return True
-        chats = task_config.get("chats")
-        if not isinstance(chats, list):
+        raw_chats = task_config.get("chats")
+        if not isinstance(raw_chats, list):
             return True
-        response_actions = {3, 4, 5, 6, 7}
+        chats = _normalize_task_chats(raw_chats, task_config.get("_version"))
+        if not chats:
+            return False
+        response_actions = {1, 2, 3, 4, 5, 6, 7}
         for chat in chats:
-            if not isinstance(chat, dict):
-                continue
             actions = chat.get("actions")
             if not isinstance(actions, list):
                 continue
@@ -200,11 +245,12 @@ class SignTaskService:
     @staticmethod
     def _normalize_message_sender(sender: Any) -> Dict[str, Any]:
         if not isinstance(sender, dict):
-            return {"id": None, "username": "", "display_name": ""}
+            return {"id": None, "username": "", "display_name": "", "is_self": False}
         return {
             "id": sender.get("id"),
             "username": str(sender.get("username", "") or ""),
             "display_name": str(sender.get("display_name", "") or ""),
+            "is_self": bool(sender.get("is_self", False)),
         }
 
     def _normalize_message_event(self, event: Any) -> Optional[Dict[str, Any]]:
@@ -218,6 +264,7 @@ class SignTaskService:
             "chat_title": str(event.get("chat_title", "") or ""),
             "chat_username": str(event.get("chat_username", "") or ""),
             "sender": self._normalize_message_sender(event.get("sender")),
+            "is_outgoing": bool(event.get("is_outgoing", False)),
             "text": str(event.get("text", "") or ""),
             "caption": str(event.get("caption", "") or ""),
             "summary": str(event.get("summary", "") or ""),
@@ -264,6 +311,12 @@ class SignTaskService:
             return ""
         for event in reversed(message_events):
             if not isinstance(event, dict):
+                continue
+            sender = event.get("sender")
+            sender_is_self = isinstance(sender, dict) and bool(
+                sender.get("is_self", False)
+            )
+            if bool(event.get("is_outgoing", False)) or sender_is_self:
                 continue
             summary = str(event.get("summary", "") or "").strip()
             if not summary:
@@ -696,11 +749,7 @@ class SignTaskService:
                     task_dir, account_name=config.get("account_name", "")
                 )
 
-            config_version = config.get("_version")
-            chats = [
-                _normalize_chat_action_interval(c, config_version)
-                for c in config.get("chats", [])
-            ]
+            chats = _normalize_task_chats(config.get("chats"), config.get("_version"))
 
             return {
                 "name": task_dir.name,
@@ -748,11 +797,7 @@ class SignTaskService:
             with open(config_file, "r", encoding="utf-8") as f:
                 config = json.load(f)
 
-            config_version = config.get("_version")
-            chats = [
-                _normalize_chat_action_interval(c, config_version)
-                for c in config.get("chats", [])
-            ]
+            chats = _normalize_task_chats(config.get("chats"), config.get("_version"))
 
             return {
                 "name": task_name,
@@ -1537,34 +1582,8 @@ class SignTaskService:
             last_reply = ""
             if success:
                 last_reply = self._latest_message_summary(final_message_events)
-                if not last_reply:
-                    for line in reversed(final_logs):
-                        if "收到来自「" in line and ("」的消息:" in line or "」对消息的更新，消息:" in line):
-                            try:
-                                splitter = "」的消息:" if "」的消息:" in line else "」对消息的更新，消息:"
-                                reply_part = line.split(splitter, 1)[-1].strip()
-                                if reply_part.startswith("Message:"):
-                                    reply_part = reply_part[len("Message:"):].strip()
 
-                                if "text: " in reply_part:
-                                    text_content = reply_part.split("text: ", 1)[-1].split("\n")[0].strip()
-                                    if text_content:
-                                        last_reply = text_content
-                                    elif "图片: " in reply_part:
-                                        last_reply = "[图片] " + reply_part.split("图片: ", 1)[-1].split("\n")[0].strip()
-                                    else:
-                                        last_reply = reply_part.replace("\n", " ").strip()
-                                else:
-                                    last_reply = reply_part.replace("\n", " ").strip()
-
-                                if len(last_reply) > 200:
-                                    last_reply = last_reply[:197] + "..."
-                            except Exception:
-                                pass
-                            if last_reply:
-                                break
-
-            msg = error_msg if not success else last_reply
+            msg = error_msg if not success else (last_reply or "任务执行完成")
             finished_at = datetime.now()
             self._save_run_info(
                 task_name,
