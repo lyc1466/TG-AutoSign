@@ -340,7 +340,11 @@ class SignChatV3(BaseJSONConfig):
 
     @property
     def requires_updates(self) -> bool:
+        # Keep update handlers enabled for send actions so follow-up replies
+        # can still be captured for runtime history and notifications.
         response_actions = {
+            SupportAction.SEND_TEXT,
+            SupportAction.SEND_DICE,
             SupportAction.CLICK_KEYBOARD_BY_TEXT,
             SupportAction.CHOOSE_OPTION_BY_IMAGE,
             SupportAction.REPLY_BY_CALCULATION_PROBLEM,
@@ -409,7 +413,11 @@ class SignChatV4(BaseJSONConfig):
 
     @property
     def requires_updates(self) -> bool:
+        # Keep update handlers enabled for send actions so follow-up replies
+        # can still be captured for runtime history and notifications.
         response_actions = {
+            SupportAction.SEND_TEXT,
+            SupportAction.SEND_DICE,
             SupportAction.CLICK_KEYBOARD_BY_TEXT,
             SupportAction.CHOOSE_OPTION_BY_IMAGE,
             SupportAction.REPLY_BY_CALCULATION_PROBLEM,

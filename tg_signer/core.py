@@ -174,14 +174,72 @@ _CLIENT_REFS: defaultdict[str, int] = defaultdict(int)
 _CLIENT_ASYNC_LOCKS: dict[str, asyncio.Lock] = {}
 
 
+def _normalize_no_updates_preference(value: Optional[bool]) -> bool:
+    return bool(value) if value is not None else False
+
+
+def _merge_no_updates_preference(
+    current: Optional[bool], requested: Optional[bool]
+) -> bool:
+    if current is None:
+        return _normalize_no_updates_preference(requested)
+    if requested is None:
+        return bool(current)
+    return bool(current) and bool(requested)
+
+
 class Client(BaseClient):
     def __init__(self, name: str, *args, **kwargs):
         key = kwargs.pop("key", None)
+        initial_no_updates = kwargs.get("no_updates")
+        if initial_no_updates is None and kwargs.get("takeout"):
+            initial_no_updates = True
+        normalized_no_updates = _normalize_no_updates_preference(initial_no_updates)
+        self._configured_no_updates = normalized_no_updates
+        self._requested_no_updates = normalized_no_updates
         super().__init__(name, *args, **kwargs)
+        self.no_updates = normalized_no_updates
         self.key = key or str(pathlib.Path(self.workdir).joinpath(self.name).resolve())
         if self.in_memory and not self.session_string:
             self.load_session_string()
             self.storage = MemoryStorage(self.name, self.session_string)
+
+    def request_no_updates(self, no_updates: Optional[bool]) -> bool:
+        merged_no_updates = _merge_no_updates_preference(
+            getattr(self, "_requested_no_updates", None),
+            no_updates,
+        )
+        changed = merged_no_updates != getattr(self, "_requested_no_updates", None)
+        self._requested_no_updates = merged_no_updates
+        if not self.is_initialized:
+            self.no_updates = merged_no_updates
+            self._configured_no_updates = merged_no_updates
+        return changed
+
+    async def _activate_shared_session(self):
+        desired_no_updates = getattr(
+            self,
+            "_requested_no_updates",
+            getattr(self, "_configured_no_updates", self.no_updates),
+        )
+        if desired_no_updates != getattr(self, "_configured_no_updates", None):
+            if self.is_initialized:
+                await self.terminate()
+            self.no_updates = desired_no_updates
+            self._configured_no_updates = desired_no_updates
+
+        if not self.is_connected:
+            await self.connect()
+
+        try:
+            self.me = await self.get_me()
+        except Exception as e:
+            raise ConnectionError(f"Session invalid: {e}")
+
+        if not self.is_initialized:
+            self.load_plugins()
+            await self.invoke(raw.functions.updates.GetState())
+            await self.initialize()
 
     async def __aenter__(self):
         lock = _CLIENT_ASYNC_LOCKS.get(self.key)
@@ -195,20 +253,7 @@ class Client(BaseClient):
                 max_retries = 3
                 for attempt in range(max_retries):
                     try:
-                        if not self.is_connected:
-                            await self.connect()
-
-                        try:
-                            await self.get_me()
-                        except Exception as e:
-                            # Prevent interactive login attempt
-                            raise ConnectionError(f"Session invalid: {e}")
-
-                        try:
-                            await self.start()
-                        except ConnectionError as e:
-                            if "already connected" not in str(e).lower():
-                                raise e
+                        await self._activate_shared_session()
 
                         # Enable WAL mode after start
                         if hasattr(self, "storage") and hasattr(self.storage, "conn"):
@@ -360,8 +405,46 @@ def get_client(
         api_hash = api_hash or _api_hash
 
     key = str(pathlib.Path(workdir).joinpath(name).resolve())
-    if key in _CLIENT_INSTANCES:
-        return _CLIENT_INSTANCES[key]
+    requested_no_updates = kwargs.get("no_updates")
+    cached_client = _CLIENT_INSTANCES.get(key)
+    if cached_client is not None:
+        previous_requested_no_updates = getattr(
+            cached_client,
+            "_requested_no_updates",
+            getattr(
+                cached_client,
+                "_configured_no_updates",
+                getattr(cached_client, "no_updates", None),
+            ),
+        )
+        preference_changed = cached_client.request_no_updates(requested_no_updates)
+        current_requested_no_updates = getattr(
+            cached_client,
+            "_requested_no_updates",
+            getattr(cached_client, "_configured_no_updates", cached_client.no_updates),
+        )
+        if preference_changed:
+            logger.info(
+                (
+                    "Updated cached client %s no_updates preference from %s to %s"
+                ),
+                name,
+                previous_requested_no_updates,
+                current_requested_no_updates,
+            )
+        elif requested_no_updates is not None and current_requested_no_updates != bool(
+            requested_no_updates
+        ):
+            logger.info(
+                (
+                    "Keeping cached client %s with updates enabled because "
+                    "another caller already requires message updates "
+                    "(requested no_updates=%s)"
+                ),
+                name,
+                requested_no_updates,
+            )
+        return cached_client
     # Apply environment-driven device information if caller didn't supply
     try:
         device_defaults = get_client_device_kwargs()
@@ -809,6 +892,7 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
     _tasks_dir = "signs"
     cfg_cls = SignConfigV3
     context: UserSignerWorkerContext
+    _follow_up_capture_seconds = 2.0
 
     def __init__(self, *args, message_event_callback=None, **kwargs):
         self._message_event_callback: Optional[Callable[[dict[str, Any]], Any]] = (
@@ -865,7 +949,9 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
                 "id": sender_id,
                 "username": sender_username or "",
                 "display_name": sender_name,
+                "is_self": bool(getattr(sender, "is_self", False)),
             },
+            "is_outgoing": bool(getattr(message, "outgoing", False)),
             "text": message.text or "",
             "caption": message.caption or "",
             "summary": self._message_event_summary(message),
@@ -910,6 +996,27 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
             return data if isinstance(data, list) else []
         except Exception:
             return []
+
+    @staticmethod
+    def _should_wait_for_follow_up_messages(chat: SignChatV3) -> bool:
+        if not getattr(chat, "actions", None):
+            return False
+
+        has_send_action = any(
+            isinstance(action, (SendTextAction, SendDiceAction))
+            for action in chat.actions
+        )
+        if not has_send_action:
+            return False
+
+        response_actions = (
+            ClickKeyboardByTextAction,
+            ChooseOptionByImageAction,
+            ReplyByCalculationProblemAction,
+            ReplyByImageRecognitionAction,
+            ClickButtonByCalculationProblemAction,
+        )
+        return not any(isinstance(action, response_actions) for action in chat.actions)
 
     def _find_cached_chat(self, chat_id: int, name: Optional[str]) -> Optional[dict]:
         entries = self._load_chat_cache()
@@ -1225,6 +1332,15 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
             self.log(f"处理完成: {action}")
             self.context.waiting_message = None
             await asyncio.sleep(chat.action_interval / 1000)
+
+        if (
+            self._message_event_callback is not None
+            and self._should_wait_for_follow_up_messages(chat)
+        ):
+            self.log(
+                f"发送完成后等待 {self._follow_up_capture_seconds:g} 秒收集消息回包"
+            )
+            await asyncio.sleep(self._follow_up_capture_seconds)
 
     async def run(
         self, num_of_dialogs=20, only_once: bool = False, force_rerun: bool = False
