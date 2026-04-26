@@ -13,7 +13,7 @@ async def sc_send(sendkey, title, desp="", options=None):
             num = match.group(1)
             url = f"https://{num}.push.ft07.com/send/{sendkey}.send"
         else:
-            raise ValueError("Invalid sendkey format for sctp")
+            raise ValueError("sctp 类型的 sendkey 格式无效")
     else:
         url = f"https://sctapi.ftqq.com/{sendkey}.send"
     params = {"title": title, "desp": desp, **options}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,6 +15,7 @@ from backend.models.user import User
 from backend.schemas.auth import LoginRequest, TokenResponse, UserOut
 
 router = APIRouter()
+logger = logging.getLogger("backend.auth")
 
 
 class ResetTOTPRequest(BaseModel):
@@ -32,20 +34,24 @@ class ResetTOTPResponse(BaseModel):
 
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
-    print(f"[DEBUG] Login attempt for user: {payload.username}")
+    logger.info("收到登录请求: 用户=%s", payload.username)
     user = authenticate_user(db, payload.username, payload.password)
     if not user:
-        print(f"[DEBUG] Authentication failed for user: {payload.username}")
+        logger.warning("登录失败，用户名或密码错误: 用户=%s", payload.username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password",
+            detail="用户名或密码错误",
         )
-    print(f"[DEBUG] User authenticated: {user.username}, TOTP Secret: {bool(user.totp_secret)}")
+    logger.info(
+        "用户密码校验通过: 用户=%s, 已启用两步验证=%s",
+        user.username,
+        bool(user.totp_secret),
+    )
     if user.totp_secret:
         if not payload.totp_code or not verify_totp(
             user.totp_secret, payload.totp_code
         ):
-            print(f"[DEBUG] TOTP verification failed for user: {user.username}")
+            logger.warning("两步验证码校验失败: 用户=%s", user.username)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="TOTP_REQUIRED_OR_INVALID",

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -356,7 +355,7 @@ async def submit_qr_login_password(
             username=result.get("username"),
         )
     except ValueError as e:
-        logger.warning("qr_password_failed login_id=%s error=%s", request.login_id, e)
+        logger.warning("扫码登录二次验证失败: 登录 ID=%s, 错误=%s", request.login_id, e)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(
@@ -571,15 +570,34 @@ class AccountLogItem(BaseModel):
     message: str
     summary: Optional[str] = None
     bot_message: Optional[str] = None
+    latest_message: Optional[str] = None
+    message_count: int = 0
     success: bool
     created_at: str
 
 
-def _extract_last_bot_message(item: dict) -> str:
+def _incoming_message_summaries(item: dict) -> list[str]:
     message_events = item.get("message_events")
     if isinstance(message_events, list):
-        for event in reversed(message_events):
+        summaries: list[str] = []
+        summary_positions: dict[str, int] = {}
+
+        def event_key(event: dict) -> str:
+            message_id = event.get("message_id")
+            chat_id = event.get("chat_id")
+            if message_id is not None:
+                return f"{chat_id}:{message_id}"
+            event_id = str(event.get("event_id", "") or "")
+            parts = event_id.split(":", 3)
+            if len(parts) >= 3 and parts[1] and parts[2]:
+                return f"{parts[1]}:{parts[2]}"
+            return event_id
+
+        for event in message_events:
             if not isinstance(event, dict):
+                continue
+            event_type = str(event.get("event_type", "") or "").strip().lower()
+            if event_type and event_type not in {"message_received", "message_edited"}:
                 continue
             summary = str(
                 event.get("summary")
@@ -593,45 +611,25 @@ def _extract_last_bot_message(item: dict) -> str:
             sender_is_self = isinstance(sender, dict) and bool(
                 sender.get("is_self", False)
             )
-            if not bool(event.get("is_outgoing", False)) and not sender_is_self:
-                return summary
-
-    flow_logs = item.get("flow_logs")
-    if not isinstance(flow_logs, list):
-        return ""
-
-    lines: list[str] = []
-    for raw in flow_logs:
-        if raw is None:
-            continue
-        text = str(raw).strip()
-        if not text:
-            continue
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
+            if bool(event.get("is_outgoing", False)) or sender_is_self:
                 continue
-            line = re.sub(r"^\d{4}-\d{2}-\d{2}[^-]*-\s*", "", line)
-            if line:
-                lines.append(line)
+            key = event_key(event)
+            if key and key in summary_positions:
+                summaries[summary_positions[key]] = summary
+            elif key:
+                summary_positions[key] = len(summaries)
+                summaries.append(summary)
+            else:
+                summaries.append(summary)
+        return summaries
 
-    if not lines:
-        return ""
+    return []
 
-    for line in reversed(lines):
-        lower = line.lower()
-        if "text:" in lower:
-            idx = lower.find("text:")
-            value = line[idx + 5 :].strip()
-            if value:
-                return value
 
-    keywords = ("sign", "success", "failed", "reward", "points", "checkin")
-    for line in reversed(lines):
-        low = line.lower()
-        if any(keyword in low for keyword in keywords):
-            return line
-
+def _extract_latest_message(item: dict) -> str:
+    summaries = _incoming_message_summaries(item)
+    if summaries:
+        return summaries[-1]
     return ""
 
 
@@ -655,25 +653,33 @@ def get_account_logs(
 
     logs = []
     for i, item in enumerate(history[:limit]):
+        summaries = _incoming_message_summaries(item)
+        latest_message = summaries[-1] if summaries else _extract_latest_message(item)
+        raw_message = item.get("message") or (
+            "执行成功" if item.get("success") else "执行失败"
+        )
+        if summaries:
+            raw_message = f"收到 {len(summaries)} 条消息"
         logs.append(
             AccountLogItem(
                 id=i + 1,
                 account_name=account_name,
                 task_name=item.get("task_name", "未知任务"),
-                message=item.get("message")
-                or ("执行成功" if item.get("success") else "执行失败"),
+                message=raw_message,
                 success=item.get("success", False),
                 created_at=item.get("time", ""),
+                latest_message=latest_message or None,
+                message_count=len(summaries),
             )
         )
 
-    for idx, item in enumerate(history[:limit]):
+    for idx, _item in enumerate(history[:limit]):
         if idx >= len(logs):
             break
         task_name = logs[idx].task_name or "Unknown Task"
         success = bool(logs[idx].success)
         logs[idx].summary = f"Task: {task_name} {'success' if success else 'failed'}"
-        logs[idx].bot_message = _extract_last_bot_message(item) or None
+        logs[idx].bot_message = logs[idx].latest_message
 
     return logs
 
@@ -695,7 +701,7 @@ def clear_account_logs(
         return ClearAccountLogsResponse(
             success=True,
             cleared=result.get("removed_entries", 0),
-            message="Logs cleared",
+            message="日志已清空",
             code="LOGS_CLEARED",
         )
     except Exception:
@@ -716,15 +722,15 @@ def export_account_logs(
 
     history = get_sign_task_service().get_account_history_logs(account_name)
 
-    content = f"Account Logs for: {account_name}\n"
+    content = f"账号日志导出：{account_name}\n"
     content += "=" * 40 + "\n\n"
 
     for item in history:
         time_str = item.get("time", "").replace("T", " ")[:19]
-        status = "SUCCESS" if item.get("success") else "FAILED"
-        content += f"[{time_str}] Task: {item.get('task_name')} | Status: {status}\n"
+        status = "成功" if item.get("success") else "失败"
+        content += f"[{time_str}] 任务：{item.get('task_name')} | 状态：{status}\n"
         if item.get("message"):
-            content += f"Message: {item.get('message')}\n"
+            content += f"说明：{item.get('message')}\n"
         content += "-" * 20 + "\n"
 
     return Response(

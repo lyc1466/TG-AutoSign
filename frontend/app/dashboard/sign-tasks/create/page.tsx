@@ -380,7 +380,7 @@ export default function CreateSignTaskPage() {
                                             </div>
                                             <button
                                                 onClick={() => setChats(chats.filter((_, i) => i !== idx))}
-                                                className="action-btn !text-rose-400 hover:!bg-rose-500/10"
+                                                className="action-btn status-action-danger"
                                             >
                                                 <Trash weight="bold" />
                                             </button>
@@ -507,7 +507,7 @@ export default function CreateSignTaskPage() {
                                                         const newActs = editingChat.actions.filter((_, idx) => idx !== i);
                                                         setEditingChat({ ...editingChat, actions: newActs });
                                                     }}
-                                                    className="action-btn !w-9 !h-9 !text-rose-400"
+                                                    className="action-btn !w-9 !h-9 status-action-danger"
                                                 >
                                                     <X weight="bold" />
                                                 </button>

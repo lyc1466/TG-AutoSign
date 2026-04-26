@@ -116,8 +116,8 @@ const TaskItem = memo(({ task, loading, isRunning, onEdit, onRun, onViewLogs, on
 
             <div className="mt-3 md:hidden">
                 {task.last_run ? (
-                    <div className="text-[10px] font-mono text-main/40 flex items-center gap-2 pt-2 border-t border-white/5">
-                        <span className={task.last_run.success ? "text-emerald-400" : "text-rose-400"}>
+                    <div className="text-[10px] font-mono ui-muted flex items-center gap-2 pt-2 border-t border-white/5">
+                        <span className={task.last_run.success ? "status-text-success" : "status-text-danger"}>
                             {task.last_run.success ? t("success") : t("failure")}
                         </span>
                         <span>
@@ -135,7 +135,7 @@ const TaskItem = memo(({ task, loading, isRunning, onEdit, onRun, onViewLogs, on
                 <button
                     onClick={() => onRun(task.name)}
                     disabled={loading}
-                    className="action-btn !w-full !h-10 !text-emerald-400 hover:bg-emerald-500/10"
+                    className="action-btn !w-full !h-10 status-action-success"
                     title={t("run")}
                 >
                     <Play weight="fill" size={14} />
@@ -167,7 +167,7 @@ const TaskItem = memo(({ task, loading, isRunning, onEdit, onRun, onViewLogs, on
                 <button
                     onClick={() => onDelete(task.name)}
                     disabled={loading}
-                    className="action-btn !w-full !h-10 !text-rose-400 hover:bg-rose-500/10"
+                    className="action-btn !w-full !h-10 status-action-danger"
                     title={t("delete")}
                 >
                     <Trash weight="bold" size={14} />
@@ -176,12 +176,12 @@ const TaskItem = memo(({ task, loading, isRunning, onEdit, onRun, onViewLogs, on
 
             <div className="hidden md:flex mt-4 items-center justify-between gap-4">
                 {task.last_run ? (
-                    <div className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest ${task.last_run.success ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest">
+                        <div className={`flex items-center gap-1.5 ${task.last_run.success ? 'status-text-success' : 'status-text-danger'}`}>
                             {task.last_run.success ? <CheckCircle weight="bold" /> : <XCircle weight="bold" />}
                             {task.last_run.success ? t("success") : t("failure")}
                         </div>
-                        <div className="text-[10px] text-main/30 font-mono normal-case tracking-normal">
+                        <div className="text-[10px] ui-muted font-mono normal-case tracking-normal">
                             {new Date(task.last_run.time).toLocaleString(language === "zh" ? 'zh-CN' : 'en-US', {
                                 month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
                             })}
@@ -195,7 +195,7 @@ const TaskItem = memo(({ task, loading, isRunning, onEdit, onRun, onViewLogs, on
                     <button
                         onClick={() => onRun(task.name)}
                         disabled={loading}
-                        className="action-btn !w-8 !h-8 !text-emerald-400 hover:bg-emerald-500/10"
+                        className="action-btn !w-8 !h-8 status-action-success"
                         title={t("run")}
                     >
                         <Play weight="fill" size={14} />
@@ -227,7 +227,7 @@ const TaskItem = memo(({ task, loading, isRunning, onEdit, onRun, onViewLogs, on
                     <button
                         onClick={() => onDelete(task.name)}
                         disabled={loading}
-                        className="action-btn !w-8 !h-8 !text-rose-400 hover:bg-rose-500/10"
+                        className="action-btn !w-8 !h-8 status-action-danger"
                         title={t("delete")}
                     >
                         <Trash weight="bold" size={14} />
@@ -593,11 +593,11 @@ export default function AccountTasksContent() {
             await deleteSignTask(token, taskName, accountName);
             await loadData(token);
         } catch (err: any) {
-            // Only show error if it's NOT a 404 (already deleted/doesn't exist)
-            if (err.status !== 404 && !err.message?.includes("not exist")) {
+            // 404 说明任务已不存在，刷新列表即可
+            if (err.status !== 404) {
                 addToastRef.current(formatErrorMessage("delete_failed", err), "error");
             } else {
-                await loadData(token); // Refresh anyway if it doesn't exist
+                await loadData(token);
             }
         } finally {
             setLoading(false);
@@ -799,7 +799,12 @@ export default function AccountTasksContent() {
             }
             setCopyTaskDialog({ taskName: isZh ? `${accountName} (全部)` : `${accountName} (all)`, config });
         } catch (err: any) {
-            addToast(err?.message ? `Export failed: ${err.message}` : "Export failed", "error");
+            addToast(
+                err?.message
+                    ? (isZh ? `导出失败：${err.message}` : `Export failed: ${err.message}`)
+                    : (isZh ? "导出失败" : "Export failed"),
+                "error"
+            );
         } finally {
             setLoading(false);
         }
@@ -838,7 +843,12 @@ export default function AccountTasksContent() {
             }
             await loadData(token);
         } catch (err: any) {
-            addToast(err?.message ? `Import failed: ${err.message}` : "Import failed", "error");
+            addToast(
+                err?.message
+                    ? (isZh ? `导入失败：${err.message}` : `Import failed: ${err.message}`)
+                    : (isZh ? "导入失败" : "Import failed"),
+                "error"
+            );
         } finally {
             setBatchImporting(false);
         }
@@ -1485,7 +1495,7 @@ export default function AccountTasksContent() {
 
                                             <button
                                                 onClick={() => showCreateDialog ? handleRemoveAction(index) : handleEditRemoveAction(index)}
-                                                className="action-btn shrink-0 !w-10 !h-10 !text-rose-400 !bg-rose-500/5 hover:!bg-rose-500/10"
+                                                className="action-btn shrink-0 !w-10 !h-10 status-action-danger"
                                             >
                                                 <Trash weight="bold" size={16} />
                                             </button>
@@ -1668,14 +1678,14 @@ export default function AccountTasksContent() {
                                         <button
                                             type="button"
                                             onClick={() => setHistoryTab("messages")}
-                                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${historyTab === "messages" ? "bg-[#8a3ffc] text-white" : "bg-white/5 text-main/60 hover:bg-white/10"}`}
+                                            className={`px-3 py-1.5 rounded-full border text-xs font-bold transition-all ${historyTab === "messages" ? "border-transparent bg-[#8a3ffc] text-white" : "history-tab-inactive"}`}
                                         >
                                             {t("task_monitor_messages_tab")}
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => setHistoryTab("logs")}
-                                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${historyTab === "logs" ? "bg-[#8a3ffc] text-white" : "bg-white/5 text-main/60 hover:bg-white/10"}`}
+                                            className={`px-3 py-1.5 rounded-full border text-xs font-bold transition-all ${historyTab === "logs" ? "border-transparent bg-[#8a3ffc] text-white" : "history-tab-inactive"}`}
                                         >
                                             {t("logs")}
                                         </button>
@@ -1689,32 +1699,32 @@ export default function AccountTasksContent() {
                                 <X weight="bold" />
                             </button>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-4 font-mono text-[11px] leading-relaxed bg-black/20">
+                        <div className="flex-1 overflow-y-auto p-4 font-mono text-[11px] leading-relaxed history-modal-body">
                             {historyLoading ? (
-                                <div className="flex items-center gap-2 text-main/30 italic">
+                                <div className="flex items-center gap-2 ui-muted italic">
                                     <Spinner className="animate-spin" size={12} />
                                     {t("loading")}
                                 </div>
                             ) : historyLogs.length === 0 ? (
-                                <div className="text-main/30 italic">{t("task_history_empty")}</div>
+                                <div className="ui-muted italic">{t("task_history_empty")}</div>
                             ) : (
                                 <div className="space-y-4">
                                     {historyLogs.map((log, i) => (
-                                        <details key={`${log.time}-${i}`} className="rounded-xl border border-white/5 bg-white/5 overflow-hidden" open={i === 0}>
+                                        <details key={`${log.time}-${i}`} className="rounded-xl border history-entry-card overflow-hidden" open={i === 0}>
                                             <summary className="flex flex-wrap justify-between items-center gap-3 px-4 py-3 cursor-pointer list-none">
                                                 <div className="min-w-0">
-                                                    <div className="text-main/30 text-[10px]">
+                                                    <div className="ui-muted text-[10px]">
                                                         {new Date(log.time).toLocaleString(language === "zh" ? "zh-CN" : "en-US")}
                                                     </div>
                                                     <div className="text-main/80 break-all mt-1">
                                                         {log.message
                                                             ? (isZh ? `${t("task_monitor_summary")}：${log.message}` : `${t("task_monitor_summary")}: ${log.message}`)
-                                                            : (isZh
-                                                                ? `任务：${historyTaskName}${log.success ? "执行成功" : "执行失败"}`
-                                                                : `Task: ${historyTaskName} ${log.success ? "succeeded" : "failed"}`)}
+                                                        : (isZh
+                                                            ? `任务：${historyTaskName}${log.success ? "执行成功" : "执行失败"}`
+                                                            : `Task: ${historyTaskName} ${log.success ? "succeeded" : "failed"}`)}
                                                     </div>
                                                 </div>
-                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${log.success ? "text-emerald-400 border-emerald-500/20 bg-emerald-500/10" : "text-rose-400 border-rose-500/20 bg-rose-500/10"}`}>
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${log.success ? "status-badge-success" : "status-badge-danger"}`}>
                                                     {log.success ? t("success") : t("failure")}
                                                 </span>
                                             </summary>
@@ -1725,14 +1735,9 @@ export default function AccountTasksContent() {
                                                             ? `任务：${historyTaskName}${log.success ? "执行成功" : "执行失败"}`
                                                             : `Task: ${historyTaskName} ${log.success ? "succeeded" : "failed"}`}
                                                     </div>
-                                                    {log.message ? (
-                                                        <div className="text-main/60 break-all">
-                                                            {isZh ? `${t("task_monitor_summary")}：${log.message}` : `${t("task_monitor_summary")}: ${log.message}`}
-                                                        </div>
-                                                    ) : null}
                                                     {historyTab === "messages" ? (
                                                         <div className="space-y-3">
-                                                            <div className="text-[10px] uppercase tracking-wider text-main/30">
+                                                            <div className="text-[10px] uppercase tracking-wider ui-muted">
                                                                 {t("task_monitor_messages_tab")}
                                                             </div>
                                                             {log.message_events && log.message_events.length > 0 ? (
@@ -1742,17 +1747,17 @@ export default function AccountTasksContent() {
                                                                         return (
                                                                             <div
                                                                                 key={event.event_id || `${log.time}-${eventIndex}`}
-                                                                                className="rounded-xl border border-white/5 bg-black/20 p-3"
+                                                                                className="rounded-xl border history-message-card p-3"
                                                                             >
                                                                                 <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] mb-2">
                                                                                     <span className="px-2 py-0.5 rounded-full bg-[#8a3ffc]/15 text-[#c59bff] border border-[#8a3ffc]/20">
                                                                                         {message.typeLabel}
                                                                                     </span>
-                                                                                    <span className="text-main/30">
+                                                                                    <span className="ui-muted">
                                                                                         {event.event_time ? new Date(event.event_time).toLocaleString(language === "zh" ? "zh-CN" : "en-US") : t("no_data")}
                                                                                     </span>
                                                                                 </div>
-                                                                                <div className="text-main/50 mb-2">
+                                                                                <div className="ui-dim mb-2">
                                                                                     {message.senderName} → {message.recipientName}
                                                                                 </div>
                                                                                 <div className="text-main/85 break-words whitespace-pre-wrap">
@@ -1763,19 +1768,19 @@ export default function AccountTasksContent() {
                                                                     })}
                                                                 </div>
                                                             ) : (
-                                                                <div className="text-main/40 italic">{t("task_history_no_messages")}</div>
+                                                                <div className="ui-muted italic">{t("task_history_no_messages")}</div>
                                                             )}
                                                         </div>
                                                     ) : (
                                                         <div className="space-y-3">
-                                                            <div className="text-[10px] uppercase tracking-wider text-main/30">
+                                                            <div className="text-[10px] uppercase tracking-wider ui-muted">
                                                                 {t("logs")}
                                                             </div>
                                                             {log.flow_logs && log.flow_logs.length > 0 ? (
                                                                 <div className="space-y-1">
                                                                     {log.flow_logs.map((line, lineIndex) => (
                                                                         <div key={lineIndex} className="text-main/80 flex gap-2">
-                                                                            <span className="text-main/20 select-none w-6 text-right">
+                                                                            <span className="ui-line-number select-none w-6 text-right">
                                                                                 {(lineIndex + 1).toString().padStart(2, "0")}
                                                                             </span>
                                                                             <span className="break-all">{line}</span>
@@ -1783,7 +1788,7 @@ export default function AccountTasksContent() {
                                                                     ))}
                                                                 </div>
                                                             ) : (
-                                                                <div className="text-main/50">
+                                                                <div className="ui-dim">
                                                                     {log.message || t("task_history_no_flow")}
                                                                 </div>
                                                             )}

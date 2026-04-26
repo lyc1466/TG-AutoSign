@@ -35,10 +35,10 @@ def tg_monitor(ctx: click.Context):
     ]:
         if proxy := ctx.obj.get("proxy"):
             logger.info(
-                "Using proxy: %s"
+                "当前使用代理: %s"
                 % f"{proxy['scheme']}://{proxy['hostname']}:{proxy['port']}"
             )
-        logger.info(f"Using account: {ctx.obj['account']}")
+        logger.info("当前使用账号: %s", ctx.obj["account"])
 
 
 tg_monitor: Group
@@ -75,7 +75,7 @@ def reconfig(obj, task_name):
 
 
 @tg_monitor.command(
-    help="""导出配置，默认为输出到终端。\n\n e.g.\n\n  tg-monitor export -O config.json mytask\n\n  tg-monitor export mytask > config.json"""
+    help="""导出配置，默认输出到终端。\n\n示例：\n\n  tg-monitor export -O config.json mytask\n\n  tg-monitor export mytask > config.json"""
 )
 @click.argument("task_name")
 @click.option(
@@ -94,7 +94,7 @@ def export(obj, task_name: str, file: str = None):
 
 @tg_monitor.command(
     name="import",
-    help="""导入配置，默认为从终端读取。\n\n e.g.\n\n  tg-monitor import -I config.json mytask\n\n  cat config.json | tg-monitor import mytask""",
+    help="""导入配置，默认从终端读取。\n\n示例：\n\n  tg-monitor import -I config.json mytask\n\n  cat config.json | tg-monitor import mytask""",
 )
 @click.argument("task_name")
 @click.option(

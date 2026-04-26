@@ -10,6 +10,15 @@ TG-AutoSign is a Telegram automation project with a web management panel. It sup
 
 See [CHANGELOG.md](CHANGELOG.md) for the full update history.
 
+## Recent Updates
+
+- 2026-04-26 Align the dashboard run-log count and latest-message typography, and remove the duplicate latest-summary line from expanded account task history entries
+- 2026-04-26 Improve light-theme readability for success/failure states across task cards, task history, run monitoring, dashboard logs, and settings, with a 12px readability floor for small text
+- 2026-04-25 Refine backend and tg_signer logging with unified timestamps, formatted output, richer Chinese diagnostics, scheduler logs, defensive edge-case checks, and cleanup of legacy print and utcnow usage
+- 2026-04-25 Fix sign task notifications falling back to startup logs, restore message context capture for send-type and legacy-config tasks, and avoid stale client reuse or self-authored message summaries
+- 2026-04-25 Correct sender and recipient modeling for sign task message history so private chats no longer display the chat object as the recipient, and show readable names, usernames, and IDs
+- 2026-04-24 Add Telegram Bot task completion notifications with global defaults and per-account overrides
+
 ## Capabilities
 
 - Manage multiple Telegram accounts in one place

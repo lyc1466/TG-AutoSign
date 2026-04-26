@@ -28,8 +28,7 @@ def ensure_admin(db: Session, username: str = "admin", password: str = None):
         else:
             password = "admin123"
             logger.warning(
-                "SECURITY WARNING: Default admin account created with hardcoded password 'admin123'. "
-                "Please change it immediately or set ADMIN_PASSWORD environment variable."
+                "安全警告：系统已使用硬编码默认密码 'admin123' 创建管理员账号，请立即修改密码，或预先设置 ADMIN_PASSWORD 环境变量。"
             )
 
     # 如果没有任何用户，则创建默认管理员

@@ -35,6 +35,7 @@ from backend.core.database import (  # noqa: E402
     get_session_local,
     init_engine,
 )
+from backend.core.logging import configure_application_logging  # noqa: E402
 from backend.scheduler import (  # noqa: E402
     init_scheduler,
     shutdown_scheduler,
@@ -58,6 +59,7 @@ class HealthCheckFilter(logging.Filter):
 logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 
 settings = get_settings()
+configure_application_logging(settings.resolve_logs_dir())
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
 app.state.ready = False
@@ -147,8 +149,9 @@ async def on_startup() -> None:
         try:
             await sync_jobs()
         except Exception as exc:
-            logging.getLogger("backend.startup").error(
-                f"Delayed scheduler sync failed: {exc}"
+            logging.getLogger("backend.startup").exception(
+                "延迟同步调度任务失败: %s",
+                exc,
             )
         finally:
             app.state.ready = True

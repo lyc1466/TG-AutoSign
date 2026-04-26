@@ -35,7 +35,7 @@ def _validate_name(value: str, field: str) -> None:
     if not value or ".." in value or "/" in value or "\\" in value or "\x00" in value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid {field}",
+            detail=f"{field} 参数不合法",
         )
 
 
@@ -103,7 +103,7 @@ def list_all_tasks(current_user: User = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list tasks: {str(e)}",
+            detail=f"获取任务列表失败: {str(e)}",
         )
 
 
@@ -120,7 +120,7 @@ def export_sign_task(
         if config_json is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Task {task_name} not found",
+                detail=f"任务 {task_name} 不存在",
             )
 
         return Response(
@@ -134,7 +134,7 @@ def export_sign_task(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to export task: {str(e)}",
+            detail=f"导出任务失败: {str(e)}",
         )
 
 
@@ -147,7 +147,7 @@ async def import_sign_task(
         if not is_writable_dir(service.signs_dir):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Data directory is not writable: {service.signs_dir}",
+                detail=f"数据目录不可写: {service.signs_dir}",
             )
 
         success = service.import_sign_task(
@@ -156,11 +156,11 @@ async def import_sign_task(
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid task config",
+                detail="任务配置无效",
             )
 
         data = json.loads(request.config_json)
-        final_task_name = request.task_name or data.get("task_name", "imported_task")
+        final_task_name = request.task_name or data.get("task_name", "导入任务")
 
         from backend.scheduler import sync_jobs
 
@@ -170,14 +170,14 @@ async def import_sign_task(
         return ImportTaskResponse(
             success=True,
             task_name=final_task_name,
-            message=f"Task {final_task_name} imported",
+            message=f"任务 {final_task_name} 导入成功",
         )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to import task: {str(e)}",
+            detail=f"导入任务失败: {str(e)}",
         )
 
 
@@ -195,7 +195,7 @@ def export_all_configs(current_user: User = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to export all configs: {str(e)}",
+            detail=f"导出全部配置失败: {str(e)}",
         )
 
 
@@ -210,19 +210,17 @@ async def import_all_configs(
 
         message_parts = []
         if result.get("signs_imported", 0) > 0:
-            message_parts.append(f"sign tasks imported: {result['signs_imported']}")
+            message_parts.append(f"已导入签到任务 {result['signs_imported']} 个")
         if result.get("signs_skipped", 0) > 0:
-            message_parts.append(f"sign tasks skipped: {result['signs_skipped']}")
+            message_parts.append(f"已跳过签到任务 {result['signs_skipped']} 个")
         if result.get("monitors_imported", 0) > 0:
-            message_parts.append(
-                f"monitor tasks imported: {result['monitors_imported']}"
-            )
+            message_parts.append(f"已导入监控任务 {result['monitors_imported']} 个")
         if result.get("monitors_skipped", 0) > 0:
-            message_parts.append(f"monitor tasks skipped: {result['monitors_skipped']}")
+            message_parts.append(f"已跳过监控任务 {result['monitors_skipped']} 个")
         if result.get("settings_imported", 0) > 0:
-            message_parts.append(f"settings imported: {result['settings_imported']}")
+            message_parts.append(f"已导入设置 {result['settings_imported']} 项")
 
-        message = "; ".join(message_parts) if message_parts else "No config imported"
+        message = "；".join(message_parts) if message_parts else "未导入任何配置"
 
         from backend.scheduler import sync_jobs
 
@@ -240,7 +238,7 @@ async def import_all_configs(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to import all configs: {str(e)}",
+            detail=f"导入全部配置失败: {str(e)}",
         )
 
 
@@ -257,7 +255,7 @@ async def delete_sign_task(
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Task {task_name} not found",
+                detail=f"任务 {task_name} 不存在",
             )
 
         from backend.scheduler import sync_jobs
@@ -265,7 +263,7 @@ async def delete_sign_task(
         _clear_sign_task_cache()
         await sync_jobs()
 
-        return {"success": True, "message": f"Task {task_name} deleted"}
+        return {"success": True, "message": f"任务 {task_name} 已删除"}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except HTTPException:
@@ -273,7 +271,7 @@ async def delete_sign_task(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete task: {str(e)}",
+            detail=f"删除任务失败: {str(e)}",
         )
 
 
@@ -295,7 +293,7 @@ def export_sign_tasks(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to export sign tasks: {str(e)}",
+            detail=f"导出签到任务失败: {str(e)}",
         )
 
 
@@ -309,7 +307,7 @@ async def import_sign_tasks(
         if not is_writable_dir(service.signs_dir):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Data directory is not writable: {service.signs_dir}",
+                detail=f"数据目录不可写: {service.signs_dir}",
             )
 
         result = service.import_sign_tasks(
@@ -328,12 +326,12 @@ async def import_sign_tasks(
         errors = [str(e) for e in result.get("errors", [])]
         parts = []
         if imported:
-            parts.append(f"{imported} imported")
+            parts.append(f"已导入 {imported} 个")
         if skipped:
-            parts.append(f"{skipped} skipped")
+            parts.append(f"已跳过 {skipped} 个")
         if errors:
-            parts.append(f"{len(errors)} errors")
-        message = "; ".join(parts) if parts else "Nothing to import"
+            parts.append(f"出现 {len(errors)} 个错误")
+        message = "；".join(parts) if parts else "没有可导入的任务"
 
         return ImportSignTasksResponse(
             imported=imported,
@@ -346,7 +344,7 @@ async def import_sign_tasks(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to import sign tasks: {str(e)}",
+            detail=f"导入签到任务失败: {str(e)}",
         )
 
 
@@ -400,7 +398,7 @@ def get_ai_config(current_user: User = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to read AI config: {str(e)}",
+            detail=f"读取 AI 配置失败: {str(e)}",
         )
 
 
@@ -414,13 +412,13 @@ def save_ai_config(
             base_url=request.base_url,
             model=request.model,
         )
-        return AIConfigSaveResponse(success=True, message="AI config saved")
+        return AIConfigSaveResponse(success=True, message="AI 配置已保存")
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save AI config: {str(e)}",
+            detail=f"保存 AI 配置失败: {str(e)}",
         )
 
 
@@ -430,18 +428,18 @@ async def test_ai_connection(current_user: User = Depends(get_current_user)):
         result = await get_config_service().test_ai_connection()
         return AITestResponse(**result)
     except Exception as e:
-        return AITestResponse(success=False, message=f"AI test failed: {str(e)}")
+        return AITestResponse(success=False, message=f"AI 测试失败: {str(e)}")
 
 
 @router.delete("/ai", response_model=AIConfigSaveResponse)
 def delete_ai_config(current_user: User = Depends(get_current_user)):
     try:
         get_config_service().delete_ai_config()
-        return AIConfigSaveResponse(success=True, message="AI config deleted")
+        return AIConfigSaveResponse(success=True, message="AI 配置已删除")
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete AI config: {str(e)}",
+            detail=f"删除 AI 配置失败: {str(e)}",
         )
 
 
@@ -465,7 +463,7 @@ def get_global_settings(current_user: User = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to read global settings: {str(e)}",
+            detail=f"读取全局设置失败: {str(e)}",
         )
 
 
@@ -483,13 +481,13 @@ def save_global_settings(
             settings["data_dir"] = request.data_dir
 
         get_config_service().save_global_settings(settings)
-        return AIConfigSaveResponse(success=True, message="Global settings saved")
+        return AIConfigSaveResponse(success=True, message="全局设置已保存")
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save global settings: {str(e)}",
+            detail=f"保存全局设置失败: {str(e)}",
         )
 
 
@@ -543,7 +541,7 @@ def get_telegram_config(current_user: User = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to read Telegram config: {str(e)}",
+            detail=f"读取 Telegram 配置失败: {str(e)}",
         )
 
 
@@ -555,7 +553,7 @@ def save_telegram_config(
         if not request.api_id or not request.api_hash:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="api_id and api_hash are required",
+                detail="必须填写 api_id 和 api_hash",
             )
 
         success = get_config_service().save_telegram_config(
@@ -565,15 +563,15 @@ def save_telegram_config(
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to save Telegram config",
+                detail="保存 Telegram 配置失败",
             )
-        return TelegramConfigSaveResponse(success=True, message="Telegram config saved")
+        return TelegramConfigSaveResponse(success=True, message="Telegram 配置已保存")
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save Telegram config: {str(e)}",
+            detail=f"保存 Telegram 配置失败: {str(e)}",
         )
 
 
@@ -581,11 +579,11 @@ def save_telegram_config(
 def reset_telegram_config(current_user: User = Depends(get_current_user)):
     try:
         get_config_service().reset_telegram_config()
-        return TelegramConfigSaveResponse(success=True, message="Telegram config reset")
+        return TelegramConfigSaveResponse(success=True, message="Telegram 配置已重置")
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to reset Telegram config: {str(e)}",
+            detail=f"重置 Telegram 配置失败: {str(e)}",
         )
 
 
@@ -606,7 +604,7 @@ def get_telegram_notification_config(current_user: User = Depends(get_current_us
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to read Telegram notification config: {str(e)}",
+            detail=f"读取 Telegram 通知配置失败: {str(e)}",
         )
 
 
@@ -625,14 +623,14 @@ def save_telegram_notification_config(
         )
         return TelegramNotificationConfigSaveResponse(
             success=True,
-            message="Telegram notification config saved",
+            message="Telegram 通知配置已保存",
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save Telegram notification config: {str(e)}",
+            detail=f"保存 Telegram 通知配置失败: {str(e)}",
         )
 
 
@@ -647,18 +645,18 @@ def delete_telegram_notification_config(
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to delete Telegram notification config",
+                detail="删除 Telegram 通知配置失败",
             )
         return TelegramNotificationConfigSaveResponse(
             success=True,
-            message="Telegram notification config deleted",
+            message="Telegram 通知配置已删除",
         )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete Telegram notification config: {str(e)}",
+            detail=f"删除 Telegram 通知配置失败: {str(e)}",
         )
 
 
@@ -674,23 +672,23 @@ async def test_telegram_notification_config(
         if not config:
             return TelegramNotificationConfigSaveResponse(
                 success=False,
-                message="Telegram notification config is not set",
+                message="尚未配置 Telegram 通知",
             )
 
         success = await get_notification_service().send_test_message()
         if success:
             return TelegramNotificationConfigSaveResponse(
                 success=True,
-                message="Telegram notification test message sent",
+                message="Telegram 通知测试消息发送成功",
             )
 
         return TelegramNotificationConfigSaveResponse(
             success=False,
-            message="Telegram notification test failed",
+            message="Telegram 通知测试失败",
         )
     except Exception:
-        logger.exception("Failed to send Telegram notification test message")
+        logger.exception("发送 Telegram 通知测试消息失败")
         return TelegramNotificationConfigSaveResponse(
             success=False,
-            message="Telegram notification test failed",
+            message="Telegram 通知测试失败",
         )

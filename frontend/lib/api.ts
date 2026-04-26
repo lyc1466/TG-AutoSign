@@ -605,6 +605,8 @@ export interface AccountLog {
   message: string;
   summary?: string;
   bot_message?: string;
+  latest_message?: string;
+  message_count?: number;
   success: boolean;
   created_at: string;
 }

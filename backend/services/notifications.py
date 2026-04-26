@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Awaitable, Optional
 
+from backend.core.logging import utc_now_naive
 from backend.services.config import get_config_service
 from backend.utils.tg_session import get_account_profile
 
@@ -15,7 +16,7 @@ except ImportError:  # pragma: no cover - exercised via monkeypatch in tests
     class _HttpxStub:
         class AsyncClient:
             def __init__(self, *args, **kwargs):
-                raise RuntimeError("httpx is not installed")
+                raise RuntimeError("未安装 httpx 依赖")
 
     httpx = _HttpxStub()  # type: ignore[assignment]
 
@@ -46,7 +47,7 @@ def _truncate_text(text: str, limit: int = 3500) -> str:
 
 def _format_time(value: Optional[datetime]) -> str:
     if not isinstance(value, datetime):
-        value = datetime.utcnow()
+        value = utc_now_naive()
     return value.strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -173,7 +174,7 @@ def build_regular_task_message(
     summary_text = _coerce_summary(
         summary,
         output,
-        "Success" if success else "Task finished without summary",
+        "执行成功" if success else "任务执行结束，但未提供摘要",
     )
     lines = [
         "[任务完成通知]",

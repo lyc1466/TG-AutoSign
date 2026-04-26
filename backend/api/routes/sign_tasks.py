@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import (
@@ -23,9 +24,11 @@ from sqlalchemy.orm import Session
 
 from backend.core.auth import get_current_user, verify_token
 from backend.core.database import get_db
+from backend.core.logging import describe_exception
 from backend.services.sign_tasks import get_sign_task_service
 
 router = APIRouter()
+logger = logging.getLogger("backend.api.sign_tasks")
 
 
 # Pydantic 模型定义
@@ -228,8 +231,6 @@ async def create_sign_task(
     current_user=Depends(get_current_user),
 ):
     """创建新的签到任务"""
-    import traceback
-
     try:
         # 转换 chats 为字典列表
         chats_dict = [chat.dict() for chat in payload.chats]
@@ -252,9 +253,15 @@ async def create_sign_task(
         await sync_jobs()
 
         return task
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except Exception as e:
-        print(f"创建任务失败: {str(e)}")
-        traceback.print_exc()
+        logger.exception(
+            "创建签到任务失败: 账号=%s, 任务=%s, 错误=%s",
+            payload.account_name,
+            payload.name,
+            describe_exception(e),
+        )
         raise HTTPException(status_code=500, detail=f"创建任务失败: {str(e)}")
 
 
@@ -322,10 +329,16 @@ async def update_sign_task(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except Exception as e:
-        import traceback
-
-        print(f"更新任务失败: {str(e)}")
-        traceback.print_exc()
+        effective_account_name = account_name
+        if not effective_account_name and "existing" in locals() and existing:
+            effective_account_name = existing.get("account_name")
+        logger.exception(
+            "更新签到任务失败: 账号=%s, 原任务=%s, 新任务=%s, 错误=%s",
+            effective_account_name,
+            task_name,
+            payload.name,
+            describe_exception(e),
+        )
         raise HTTPException(status_code=500, detail=f"更新任务失败: {str(e)}")
 
 
@@ -417,9 +430,12 @@ async def get_account_chats(
             )
         raise HTTPException(status_code=404, detail=detail)
     except Exception as e:
-        import traceback
-
-        traceback.print_exc()
+        logger.exception(
+            "获取账号对话列表失败: 账号=%s, 强制刷新=%s, 错误=%s",
+            account_name,
+            force_refresh,
+            describe_exception(e),
+        )
         raise HTTPException(status_code=500, detail=f"获取对话列表失败: {str(e)}")
 
 
@@ -531,7 +547,12 @@ async def sign_task_logs_ws(
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print(f"WS Error: {e}")
+        logger.exception(
+            "签到任务日志 WebSocket 推送失败: 任务=%s, 账号=%s, 错误=%s",
+            task_name,
+            account_name,
+            describe_exception(e),
+        )
     finally:
         try:
             await websocket.close()

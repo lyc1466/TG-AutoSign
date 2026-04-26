@@ -3,8 +3,14 @@
 本文件记录当前维护分支的重要功能、修复、配置、部署与文档变更。
 This file records important feature, fix, configuration, deployment, and documentation changes for the current maintained branch.
 
+## 2026-04-26
+
+- 修复 / Fixed: 统一首页运行日志中“收到 N 条消息”和“最近消息”的字号字重，并移除账号任务历史展开后的重复“最新摘要”行 / Align the dashboard run-log count and latest-message typography, and remove the duplicate latest-summary line from expanded account task history entries.
+- 修复 / Fixed: 优化浅色主题下任务卡片、任务历史、运行监控、首页日志与设置页的成功/失败状态样式，改用主题感知的高对比度状态色和历史面板背景，并为 9-11px 小字号文案增加 12px 可读下限，避免成功徽章、日志文字和说明文字发虚或看不清 / Improve light-theme readability for success/failure states across task cards, task history, run monitoring, dashboard logs, and settings by using theme-aware high-contrast status colors and history panel surfaces, and add a 12px readability floor for 9-11px text.
+
 ## 2026-04-25
 
+- 变更 / Changed: 重构后端与 `tg_signer` 日志系统，统一时间戳与格式化输出，补充中文诊断日志、调度日志和关键边缘场景判断，并清理遗留 `print` 与 `utcnow()` 用法，便于直接通过日志定位失败阶段与原因 / Refine backend and `tg_signer` logging with unified timestamps and formatting, richer Chinese diagnostics, scheduler logs, defensive edge-case checks, and cleanup of legacy `print` and `utcnow()` usage so failures can be located directly from logs.
 - 修复 / Fixed: 修复签到任务通知摘要误回退为启动日志的问题，补齐发送型及旧版配置签到任务的消息上下文采集，并避免复用旧的 no_updates client 或将自己发送的消息误记为执行摘要 / Fix sign task notifications falling back to startup logs, restore message context capture for send-type and legacy-config sign tasks, and avoid stale no_updates client reuse or self-authored messages being picked as summaries.
 - 修复 / Fixed: 修正签到任务消息历史中的发送方/接收方建模与展示，私聊场景不再把 chat 误显示为接收者，并补充名称、用户名与 ID 的可读格式 / Correct sender and recipient modeling for sign task message history so private chats no longer display the chat object as the recipient, and show readable name, username, and ID formatting.
 

@@ -54,11 +54,11 @@ class OpenAIConfigManager:
         return self.load_file_config()
 
     def ask_for_config(self):
-        print_to_user("开始配置OpenAI API并保存至本地。")
+        print_to_user("开始配置 OpenAI API 并保存到本地。")
         input_ = UserInput()
         api_key = input_("请输入 OPENAI_API_KEY: ").strip()
         while not api_key:
-            print_to_user("API Key不能为空！")
+            print_to_user("API Key 不能为空！")
             api_key = input_("请输入 OPENAI_API_KEY: ").strip()
 
         base_url = (
@@ -74,7 +74,7 @@ class OpenAIConfigManager:
             or None
         )
         self.save_config(api_key, base_url=base_url, model=model)
-        print_to_user("OpenAI配置已保存。")
+        print_to_user("OpenAI 配置已保存。")
         return self.load_config()
 
 
