@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -630,6 +631,40 @@ def _extract_latest_message(item: dict) -> str:
     summaries = _incoming_message_summaries(item)
     if summaries:
         return summaries[-1]
+    return _extract_legacy_flow_message(item)
+
+
+def _extract_legacy_flow_message(item: dict) -> str:
+    flow_logs = item.get("flow_logs")
+    if not isinstance(flow_logs, list):
+        return ""
+
+    lines: list[str] = []
+    for raw in flow_logs:
+        if raw is None:
+            continue
+        text = str(raw).strip()
+        if not text:
+            continue
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            line = re.sub(r"^\[?\d{4}-\d{2}-\d{2}[^\]-]*\]?\s*-?\s*", "", line)
+            if line:
+                lines.append(line)
+
+    for line in reversed(lines):
+        lower = line.lower()
+        if "text:" in lower:
+            value = line[lower.find("text:") + 5 :].strip()
+            if value:
+                return value
+
+    keywords = ("sign", "success", "failed", "reward", "points", "checkin")
+    for line in reversed(lines):
+        if any(keyword in line.lower() for keyword in keywords):
+            return line
     return ""
 
 

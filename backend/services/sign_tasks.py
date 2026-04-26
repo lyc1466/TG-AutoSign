@@ -240,7 +240,7 @@ class SignTaskService:
         chats = _normalize_task_chats(raw_chats, task_config.get("_version"))
         if not chats:
             return False
-        response_actions = {1, 2, 3, 4, 5, 6, 7}
+        response_actions = {3, 4, 5, 6, 7}
         for chat in chats:
             actions = chat.get("actions")
             if not isinstance(actions, list):
