@@ -10,7 +10,7 @@ async def test_runner_submit_returns_immediately_and_completes():
     started = asyncio.Event()
     release = asyncio.Event()
 
-    async def run_task(account_name, task_name, progress_callback=None):
+    async def run_task(account_name, task_name, progress_callback=None, **_kwargs):
         started.set()
         await progress_callback("running_action", "执行任务动作中", "正在执行 Telegram 签到动作")
         await release.wait()
@@ -42,7 +42,7 @@ async def test_runner_submit_returns_immediately_and_completes():
 async def test_runner_rejects_duplicate_task_while_active():
     release = asyncio.Event()
 
-    async def run_task(account_name, task_name, progress_callback=None):
+    async def run_task(account_name, task_name, progress_callback=None, **_kwargs):
         await release.wait()
         return {"success": True, "output": "ok", "error": ""}
 
@@ -64,7 +64,7 @@ async def test_runner_rejects_duplicate_task_while_active():
 async def test_runner_reports_waiting_account_lock_with_blocking_job():
     release = asyncio.Event()
 
-    async def run_task(account_name, task_name, progress_callback=None):
+    async def run_task(account_name, task_name, progress_callback=None, **_kwargs):
         await progress_callback("running_action", "执行任务动作中", f"正在执行 {task_name}")
         await release.wait()
         return {"success": True, "output": "ok", "error": ""}
@@ -93,14 +93,16 @@ async def test_runner_reports_waiting_account_lock_with_blocking_job():
 async def test_runner_fails_waiting_job_after_lock_timeout():
     release = asyncio.Event()
 
-    async def run_task(account_name, task_name, progress_callback=None):
+    async def run_task(account_name, task_name, progress_callback=None, **_kwargs):
         await release.wait()
         return {"success": True, "output": "ok", "error": ""}
 
+    recorded_failures = []
     runner = SignTaskRunner(
         run_task=run_task,
         worker_count=2,
         lock_wait_timeout_seconds=0.01,
+        failure_recorder=recorded_failures.append,
     )
     await runner.start()
     try:
@@ -111,6 +113,26 @@ async def test_runner_fails_waiting_job_after_lock_timeout():
         status = runner.get_status(second["job_id"])
         assert status["status"] == "failed"
         assert "等待账号空闲超时" in status["message"]
+        assert recorded_failures
+        assert recorded_failures[0].task_name == "second"
     finally:
         release.set()
+        await runner.stop()
+
+
+@pytest.mark.asyncio
+async def test_runner_marks_failed_when_run_task_raises():
+    async def run_task(account_name, task_name, progress_callback=None, **_kwargs):
+        raise RuntimeError("boom")
+
+    runner = SignTaskRunner(run_task=run_task, worker_count=1)
+    await runner.start()
+    try:
+        submission = runner.submit("alice", "daily")
+        await asyncio.wait_for(runner.wait_for_idle(), timeout=1)
+        status = runner.get_status(submission["job_id"])
+        assert status["status"] == "failed"
+        assert status["status_text"] == "执行失败"
+        assert "boom" in status["error"]
+    finally:
         await runner.stop()

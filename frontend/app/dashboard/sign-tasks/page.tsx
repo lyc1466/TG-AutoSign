@@ -284,12 +284,31 @@ export default function SignTasksPage() {
                 }
             }
         } catch (err: any) {
-            addToast(formatErrorMessage("task_run_failed", err), "error");
-            if (runSocketRef.current) {
-                runSocketRef.current.close();
-                runSocketRef.current = null;
+            if (err?.status === 409) {
+                addToast(err.message || (language === "zh" ? "该任务正在执行中，请勿重复触发" : "Task is already running."), "info");
+                setRunResult({
+                    accepted: false,
+                    success: false,
+                    output: "",
+                    error: err.message || "",
+                    status: "running",
+                    status_text: language === "zh" ? "任务正在执行中" : "Task is running",
+                    message: err.message || "",
+                });
+                setRunStatus((prev: any) => prev || {
+                    status: "running",
+                    status_text: language === "zh" ? "任务正在执行中" : "Task is running",
+                    message: err.message || "",
+                    is_running: true,
+                });
+            } else {
+                addToast(err?.message || formatErrorMessage("task_run_failed", err), "error");
+                if (runSocketRef.current) {
+                    runSocketRef.current.close();
+                    runSocketRef.current = null;
+                }
+                setIsDone(true);
             }
-            setIsDone(true);
         } finally {
             setLoading(false);
         }

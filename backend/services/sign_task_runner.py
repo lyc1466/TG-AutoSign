@@ -19,6 +19,7 @@ ACTIVE_STATUSES = {
 RunTaskCallable = Callable[..., Awaitable[Dict[str, Any]]]
 LogProvider = Callable[[str, str], List[str]]
 MessageEventProvider = Callable[[str, str], List[Dict[str, Any]]]
+FailureRecorder = Callable[[Any], None]
 
 
 @dataclass
@@ -91,12 +92,14 @@ class SignTaskRunner:
         lock_wait_timeout_seconds: float = 120,
         log_provider: Optional[LogProvider] = None,
         message_event_provider: Optional[MessageEventProvider] = None,
+        failure_recorder: Optional[FailureRecorder] = None,
     ):
         self._run_task = run_task
         self._worker_count = worker_count
         self._lock_wait_timeout_seconds = lock_wait_timeout_seconds
         self._log_provider = log_provider
         self._message_event_provider = message_event_provider
+        self._failure_recorder = failure_recorder
         self._queue: asyncio.Queue[SignTaskJob | None] = asyncio.Queue()
         self._jobs: Dict[str, SignTaskJob] = {}
         self._latest_by_task: Dict[tuple[str, str], str] = {}
@@ -243,9 +246,11 @@ class SignTaskRunner:
             result = await self._run_task(
                 job.account_name,
                 job.task_name,
+                lock_wait_timeout_seconds=self._lock_wait_timeout_seconds,
                 progress_callback=lambda phase, phase_text, message: self._report(
                     job, phase, phase_text, message
                 ),
+                run_metadata=self._history_metadata(job),
             )
             success = bool(result.get("success"))
             job.success = success
@@ -318,11 +323,38 @@ class SignTaskRunner:
         job.phase_text = "执行失败"
         job.success = False
         job.error = "等待账号空闲超时"
-        job.message = "等待账号空闲超时，当前任务已取消，不会中断前序任务"
+        job.message = (
+            "等待账号空闲超时，当前任务已取消，不会中断前序任务。"
+            "请查看前序任务实时日志或稍后重试。"
+        )
         job.finished_at = datetime.now()
         job.logs.append(job.message)
+        if self._failure_recorder:
+            self._failure_recorder(job)
         if self._active_by_task.get((job.account_name, job.task_name)) == job.job_id:
             self._active_by_task.pop((job.account_name, job.task_name), None)
+
+    def _history_metadata(self, job: SignTaskJob) -> Dict[str, Any]:
+        blocking_info = None
+        if job.blocking_job_id or job.blocking_task_name:
+            blocking_info = {
+                "job_id": job.blocking_job_id,
+                "task_name": job.blocking_task_name,
+                "phase": job.blocking_phase,
+                "phase_text": job.blocking_phase_text,
+                "last_log": job.blocking_last_log,
+            }
+        return {
+            "job_id": job.job_id,
+            "status": job.status,
+            "status_text": job.status_text,
+            "started_at": job.started_at.isoformat() if job.started_at else "",
+            "action_completed_at": job.action_completed_at.isoformat()
+            if job.action_completed_at
+            else "",
+            "finished_at": job.finished_at.isoformat() if job.finished_at else "",
+            "blocking_info": blocking_info,
+        }
 
     def _rejected(self, message: str, status: str) -> Dict[str, Any]:
         return {
@@ -358,6 +390,26 @@ def get_sign_task_runner() -> SignTaskRunner:
             ),
             message_event_provider=lambda account, task: service.get_active_message_events(
                 task, account_name=account
+            ),
+            failure_recorder=lambda job: service._save_run_info(
+                job.task_name,
+                False,
+                job.message,
+                job.account_name,
+                flow_logs=job.logs,
+                message_events=job.message_events,
+                run_metadata={
+                    **job.snapshot(),
+                    "blocking_info": {
+                        "job_id": job.blocking_job_id,
+                        "task_name": job.blocking_task_name,
+                        "phase": job.blocking_phase,
+                        "phase_text": job.blocking_phase_text,
+                        "last_log": job.blocking_last_log,
+                    }
+                    if job.blocking_job_id or job.blocking_task_name
+                    else None,
+                },
             ),
         )
     return _sign_task_runner

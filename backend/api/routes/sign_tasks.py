@@ -239,6 +239,16 @@ class TaskHistoryItem(BaseModel):
     time: str
     success: bool
     message: str = ""
+    job_id: str = ""
+    task_name: str = ""
+    account_name: str = ""
+    status: str = ""
+    status_text: str = ""
+    started_at: str = ""
+    action_completed_at: str = ""
+    finished_at: str = ""
+    duration_seconds: Optional[float] = None
+    blocking_info: Optional[Dict[str, Any]] = None
     flow_logs: List[str] = Field(default_factory=list)
     flow_truncated: bool = False
     flow_line_count: int = 0

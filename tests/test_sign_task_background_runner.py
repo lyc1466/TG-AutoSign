@@ -1,7 +1,10 @@
+import asyncio
 import importlib
 import sys
 import types
 from types import SimpleNamespace
+
+import pytest
 
 import backend.core.config as config_module
 
@@ -48,6 +51,16 @@ def test_save_run_info_keeps_latest_five_entries(monkeypatch, tmp_path):
             "alice",
             flow_logs=[f"?? {index}"],
             message_events=[],
+            run_metadata={
+                "job_id": f"job-{index}",
+                "status": "completed",
+                "status_text": "任务已完成",
+                "started_at": f"2026-04-26T00:00:0{index}",
+                "action_completed_at": f"2026-04-26T00:00:1{index}",
+                "finished_at": f"2026-04-26T00:00:2{index}",
+                "duration_seconds": index,
+                "blocking_info": None,
+            },
         )
 
     history = service.get_task_history_logs(
@@ -58,4 +71,36 @@ def test_save_run_info_keeps_latest_five_entries(monkeypatch, tmp_path):
 
     assert len(history) == 5
     assert history[0]["message"] == "? 6 ?"
+    assert history[0]["job_id"] == "job-6"
+    assert history[0]["status_text"] == "任务已完成"
+    assert history[0]["action_completed_at"] == "2026-04-26T00:00:16"
+    assert history[0]["duration_seconds"] == 6
     assert history[-1]["message"] == "? 2 ?"
+
+
+@pytest.mark.asyncio
+async def test_run_task_with_logs_fails_when_account_lock_wait_times_out(
+    monkeypatch, tmp_path
+):
+    service = _build_service(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        service,
+        "get_task",
+        lambda task_name, account_name=None: {"name": task_name, "chats": []},
+    )
+    lock = asyncio.Lock()
+    await lock.acquire()
+    service._account_locks["alice"] = lock
+
+    result = await service.run_task_with_logs(
+        "alice",
+        "daily",
+        lock_wait_timeout_seconds=0.01,
+    )
+
+    assert result["success"] is False
+    assert "等待账号空闲超时" in result["error"]
+    history = service.get_task_history_logs("daily", account_name="alice")
+    assert history[0]["status"] == "failed"
+    assert "等待账号空闲超时" in history[0]["message"]
+    lock.release()
