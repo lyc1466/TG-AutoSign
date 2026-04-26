@@ -779,9 +779,48 @@ export const deleteSignTask = (token: string, name: string, accountName?: string
   }, token);
 
 export const runSignTask = (token: string, name: string, accountName: string) =>
-  request<{ success: boolean; output: string; error: string }>(`/sign-tasks/${name}/run?account_name=${accountName}`, {
+  request<{
+    accepted: boolean;
+    success: boolean;
+    job_id: string;
+    output: string;
+    error: string;
+    status: string;
+    status_text?: string;
+    phase?: string;
+    phase_text?: string;
+    message?: string;
+  }>(`/sign-tasks/${name}/run?account_name=${accountName}`, {
     method: "POST",
   }, token);
+
+export const getSignTaskStatus = (token: string, name: string, accountName: string) =>
+  request<{
+    job_id: string;
+    accepted: boolean;
+    account_name: string;
+    task_name: string;
+    status: string;
+    status_text: string;
+    phase: string;
+    phase_text: string;
+    is_running: boolean;
+    message?: string;
+    success?: boolean | null;
+    error?: string;
+    logs: string[];
+    message_events: SignTaskMessageEvent[];
+    last_log?: string;
+    blocking_task_name?: string | null;
+    blocking_phase_text?: string | null;
+    blocking_last_log?: string;
+    waited_seconds?: number;
+    lock_wait_timeout_seconds?: number;
+    submitted_at?: string;
+    started_at?: string;
+    action_completed_at?: string;
+    finished_at?: string;
+  }>(`/sign-tasks/${name}/run-status?account_name=${accountName}`, {}, token);
 
 export const getSignTaskMonitorWebSocketUrl = (
   token: string,

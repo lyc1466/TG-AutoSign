@@ -9,9 +9,10 @@ import asyncio
 import json
 import logging
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from backend.core.config import get_settings
 from backend.core.logging import (
@@ -99,14 +100,17 @@ class TaskLogHandler(logging.Handler):
     自定义日志处理器，将日志实时写入到内存列表中
     """
 
-    def __init__(self, log_list: List[str]):
+    def __init__(self, log_list: List[str], on_log: Optional[Callable[[str], None]] = None):
         super().__init__()
         self.log_list = log_list
+        self.on_log = on_log
 
     def emit(self, record):
         try:
             msg = self.format(record)
             self.log_list.append(msg)
+            if self.on_log:
+                self.on_log(msg)
             # 保持日志长度，避免内存占用过大
             if len(self.log_list) > 1000:
                 self.log_list.pop(0)
@@ -161,6 +165,9 @@ class SignTaskService:
         self._active_message_events: Dict[tuple[str, str], List[Dict[str, Any]]] = {}
         self._active_message_event_sequences: Dict[tuple[str, str], int] = {}
         self._active_tasks: Dict[tuple[str, str], bool] = {}  # (account, task) -> running
+        self._background_tasks: Dict[tuple[str, str], asyncio.Task] = {}
+        self._background_owned_tasks: set[tuple[str, str]] = set()
+        self._task_statuses: Dict[tuple[str, str], Dict[str, Any]] = {}
         self._cleanup_tasks: Dict[tuple[str, str], asyncio.Task] = {}
         self._tasks_cache = None  # 内存缓存
         self._account_locks: Dict[str, asyncio.Lock] = {}  # 账号锁
@@ -489,6 +496,22 @@ class SignTaskService:
                     "time": item.get("time", ""),
                     "success": bool(item.get("success", False)),
                     "message": message,
+                    "job_id": item.get("job_id", ""),
+                    "task_name": item.get("task_name", task_name),
+                    "account_name": item.get("account_name", account_name or ""),
+                    "status": item.get(
+                        "status",
+                        "completed" if bool(item.get("success", False)) else "failed",
+                    ),
+                    "status_text": item.get(
+                        "status_text",
+                        "任务已完成" if bool(item.get("success", False)) else "执行失败",
+                    ),
+                    "started_at": item.get("started_at", ""),
+                    "action_completed_at": item.get("action_completed_at", ""),
+                    "finished_at": item.get("finished_at", ""),
+                    "duration_seconds": item.get("duration_seconds"),
+                    "blocking_info": item.get("blocking_info"),
                     "flow_logs": [str(line) for line in flow_logs],
                     "flow_truncated": bool(item.get("flow_truncated", False)),
                     "flow_line_count": int(item.get("flow_line_count", len(flow_logs))),
@@ -697,6 +720,7 @@ class SignTaskService:
         account_name: str = "",
         flow_logs: Optional[List[str]] = None,
         message_events: Optional[List[Dict[str, Any]]] = None,
+        run_metadata: Optional[Dict[str, Any]] = None,
     ):
         """保存任务执行历史 (保留列表)"""
         from datetime import datetime
@@ -706,12 +730,24 @@ class SignTaskService:
             flow_logs
         )
         normalized_message_events = self._normalize_message_events(message_events)
+        run_metadata = run_metadata or {}
 
         new_entry = {
             "time": datetime.now().isoformat(),
             "success": success,
             "message": message,
             "account_name": account_name,
+            "job_id": run_metadata.get("job_id", ""),
+            "task_name": task_name,
+            "status": run_metadata.get("status", "completed" if success else "failed"),
+            "status_text": run_metadata.get(
+                "status_text", "任务已完成" if success else "执行失败"
+            ),
+            "started_at": run_metadata.get("started_at", ""),
+            "action_completed_at": run_metadata.get("action_completed_at", ""),
+            "finished_at": run_metadata.get("finished_at", ""),
+            "duration_seconds": run_metadata.get("duration_seconds"),
+            "blocking_info": run_metadata.get("blocking_info"),
             "flow_logs": normalized_logs,
             "flow_truncated": flow_truncated,
             "flow_line_count": flow_line_count,
@@ -1660,8 +1696,90 @@ class SignTaskService:
             return self._active_tasks.get(self._task_key(account_name, task_name), False)
         return any(key[1] == task_name for key, running in self._active_tasks.items() if running)
 
+    def submit_task(self, account_name: str, task_name: str) -> Dict[str, Any]:
+        """兼容旧调用方：委托统一后台 Runner 提交。"""
+        from backend.services.sign_task_runner import get_sign_task_runner
+
+        return get_sign_task_runner().submit(account_name, task_name)
+
+    async def _run_submitted_task(self, account_name: str, task_name: str) -> None:
+        task_key = self._task_key(account_name, task_name)
+        status_info = self._task_statuses.setdefault(task_key, {})
+        status_info.update(
+            {
+                "status": "running",
+                "message": "任务正在后台执行",
+                "started_at": datetime.now().isoformat(),
+            }
+        )
+        try:
+            result = await self.run_task_with_logs(account_name, task_name)
+            success = bool(result.get("success"))
+            status_info.update(
+                {
+                    "status": "completed" if success else "failed",
+                    "message": "任务已完成" if success else result.get("error", "任务执行失败"),
+                    "success": success,
+                    "error": result.get("error", ""),
+                    "output": result.get("output", ""),
+                    "finished_at": datetime.now().isoformat(),
+                }
+            )
+        except Exception as exc:
+            error_msg = describe_exception(exc)
+            self._append_active_log(task_key, f"后台任务执行失败：{error_msg}", level="ERROR")
+            status_info.update(
+                {
+                    "status": "failed",
+                    "message": f"任务执行失败：{error_msg}",
+                    "success": False,
+                    "error": error_msg,
+                    "output": "\n".join(self._active_logs.get(task_key, [])),
+                    "finished_at": datetime.now().isoformat(),
+                }
+            )
+        finally:
+            self._active_tasks[task_key] = False
+            self._background_tasks.pop(task_key, None)
+            self._background_owned_tasks.discard(task_key)
+
+    def get_task_status(self, account_name: str, task_name: str) -> Dict[str, Any]:
+        """获取后台签到任务状态。"""
+        task_key = self._task_key(account_name, task_name)
+        status_info = dict(self._task_statuses.get(task_key, {}))
+        status_value = status_info.get("status", "idle")
+        is_running = self._active_tasks.get(task_key, False)
+        return {
+            "account_name": account_name,
+            "task_name": task_name,
+            "status": status_value,
+            "is_running": is_running,
+            "message": status_info.get("message", ""),
+            "success": status_info.get("success"),
+            "error": status_info.get("error", ""),
+            "logs": list(self._active_logs.get(task_key, [])),
+            "message_events": self.get_active_message_events(
+                task_name,
+                account_name=account_name,
+            ),
+            "submitted_at": status_info.get("submitted_at", ""),
+            "started_at": status_info.get("started_at", ""),
+            "finished_at": status_info.get("finished_at", ""),
+        }
+
+    async def wait_for_background_tasks(self) -> None:
+        """等待当前后台签到任务结束，供测试和关闭流程使用。"""
+        tasks = [task for task in self._background_tasks.values() if not task.done()]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
     async def run_task_with_logs(
-        self, account_name: str, task_name: str
+        self,
+        account_name: str,
+        task_name: str,
+        lock_wait_timeout_seconds: Optional[float] = None,
+        progress_callback: Optional[Callable[[str, str, str], Awaitable[None]]] = None,
+        run_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """运行任务并实时捕获日志 (In-Process)"""
 
@@ -1690,7 +1808,8 @@ class SignTaskService:
                 ),
             }
 
-        if self.is_task_running(task_name, account_name):
+        task_key = self._task_key(account_name, task_name)
+        if self.is_task_running(task_name, account_name) and task_key not in self._background_owned_tasks:
             logger.warning(
                 "拒绝重复执行签到任务: 账号=%s, 任务=%s",
                 account_name,
@@ -1712,23 +1831,78 @@ class SignTaskService:
 
         account_lock = self._account_locks[account_name]
 
-        task_key = self._task_key(account_name, task_name)
         self._active_tasks[task_key] = True
         self._active_logs[task_key] = []
         self._active_message_events[task_key] = []
         self._active_message_event_sequences[task_key] = 0
 
-        # 获取 logger 实例
-        tg_logger = logging.getLogger("tg-signer")
-        log_handler = TaskLogHandler(self._active_logs[task_key])
-        log_handler.setLevel(logging.INFO)
-        log_handler.setFormatter(build_formatter(include_source=False))
-        tg_logger.addHandler(log_handler)
-
         success = False
         error_msg = ""
         output_str = ""
         validation_passed = False
+        run_metadata = dict(run_metadata or {})
+        run_started_at = ""
+        action_completed_at = ""
+        run_started_monotonic = time.perf_counter()
+
+        async def report(phase: str, phase_text: str, message: str) -> None:
+            nonlocal run_started_at, action_completed_at
+            now = datetime.now().isoformat()
+            if phase == "preparing" and not run_started_at:
+                run_started_at = now
+            if phase == "action_completed" and not action_completed_at:
+                action_completed_at = now
+            self._append_active_log(task_key, message)
+            if progress_callback:
+                await progress_callback(phase, phase_text, message)
+
+        async def report_from_tg_log(message: str) -> None:
+            if not progress_callback:
+                return
+            if "等待机器人回复" in message:
+                await progress_callback("waiting_reply", "等待机器人回复", message)
+            elif "已收到机器人回复" in message:
+                await progress_callback("running_action", "执行任务动作中", message)
+
+        def schedule_progress_from_tg_log(message: str) -> None:
+            if not progress_callback:
+                return
+            if "等待机器人回复" not in message and "已收到机器人回复" not in message:
+                return
+            asyncio.create_task(report_from_tg_log(message))
+
+        @asynccontextmanager
+        async def acquire_account_lock():
+            acquired = False
+            try:
+                if lock_wait_timeout_seconds is None:
+                    await account_lock.acquire()
+                else:
+                    await asyncio.wait_for(
+                        account_lock.acquire(), timeout=lock_wait_timeout_seconds
+                    )
+                acquired = True
+                yield
+            except asyncio.TimeoutError as exc:
+                timeout_text = f"{lock_wait_timeout_seconds:g}"
+                message = (
+                    "等待账号空闲超时，任务已取消。"
+                    f"已等待 {timeout_text} 秒，请查看前序任务实时日志或稍后重试。"
+                )
+                self._append_active_log(task_key, message, level="ERROR")
+                raise TimeoutError(message) from exc
+            finally:
+                if acquired:
+                    account_lock.release()
+
+        # 获取 logger 实例
+        tg_logger = logging.getLogger("tg-signer")
+        log_handler = TaskLogHandler(
+            self._active_logs[task_key], on_log=schedule_progress_from_tg_log
+        )
+        log_handler.setLevel(logging.INFO)
+        log_handler.setFormatter(build_formatter(include_source=False))
+        tg_logger.addHandler(log_handler)
 
         try:
             self._append_active_log(
@@ -1750,8 +1924,8 @@ class SignTaskService:
                     level="WARNING",
                 )
 
-            async with account_lock:
-                self._append_active_log(task_key, "已获取账号执行锁，开始准备运行环境")
+            async with acquire_account_lock():
+                await report("preparing", "准备执行", "已获取账号执行锁，开始准备运行环境")
                 last_end = self._account_last_run_end.get(account_name)
                 if last_end:
                     gap = time.time() - last_end
@@ -1832,7 +2006,7 @@ class SignTaskService:
                 async def handle_message_event(event: Dict[str, Any]) -> None:
                     self.append_active_message_event(account_name, task_name, event)
 
-                self._append_active_log(task_key, "正在初始化签到执行器")
+                    await report("preparing", "准备执行", "正在初始化签到执行器")
                 signer = BackendUserSigner(
                     task_name=task_name,
                     session_dir=str(session_dir),
@@ -1849,6 +2023,7 @@ class SignTaskService:
 
                 # 执行任务（数据库锁冲突时重试）
                 async with get_global_semaphore():
+                    await report("running_action", "执行任务动作中", "正在执行 Telegram 签到动作")
                     self._append_active_log(task_key, "已获取全局执行信号量，准备开始任务动作")
                     max_retries = 3
                     for attempt in range(max_retries):
@@ -1889,14 +2064,14 @@ class SignTaskService:
                             raise
 
                 success = True
-                self._append_active_log(task_key, "签到任务执行完成")
+                await report(
+                    "action_completed",
+                    "任务动作已完成",
+                    "任务动作已完成，正在执行收尾动作",
+                )
 
                 # 增加缓冲时间，防止同账号连续执行任务时，Session文件锁尚未完全释放导致 "database is locked"
-                self._append_active_log(
-                    task_key,
-                    "执行完成后等待 2 秒，尽量避免连续任务触发 Session 文件锁",
-                )
-                await asyncio.sleep(2)
+                self._append_active_log(task_key, "签到任务执行完成")
 
         except Exception as e:
             error_detail = describe_exception(e)
@@ -1916,6 +2091,16 @@ class SignTaskService:
             if log_handler in tg_logger.handlers:
                 tg_logger.removeHandler(log_handler)
 
+            if progress_callback:
+                try:
+                    await progress_callback(
+                        "cleanup",
+                        "收尾处理中",
+                        "正在保存历史并发送完成通知",
+                    )
+                except Exception:
+                    logger.exception("签到任务进度回调失败: 阶段=cleanup")
+
             # 保存执行记录
             final_logs = list(self._active_logs.get(task_key, []))
             final_message_events = list(self._active_message_events.get(task_key, []))
@@ -1927,6 +2112,17 @@ class SignTaskService:
 
             msg = error_msg if not success else (last_reply or "任务执行完成")
             finished_at = datetime.now()
+            duration_seconds = round(time.perf_counter() - run_started_monotonic, 3)
+            history_metadata = {
+                **run_metadata,
+                "status": "completed" if success else "failed",
+                "status_text": "任务已完成" if success else "执行失败",
+                "started_at": run_metadata.get("started_at") or run_started_at,
+                "action_completed_at": run_metadata.get("action_completed_at")
+                or action_completed_at,
+                "finished_at": finished_at.isoformat(),
+                "duration_seconds": duration_seconds,
+            }
             self._save_run_info(
                 task_name,
                 success,
@@ -1934,6 +2130,7 @@ class SignTaskService:
                 account_name,
                 flow_logs=final_logs,
                 message_events=final_message_events,
+                run_metadata=history_metadata,
             )
             dispatch_notification(
                 get_notification_service().send_sign_task_completion(
@@ -1948,6 +2145,14 @@ class SignTaskService:
                 logger=logger,
                 description=f"发送签到任务完成通知失败: 账号={account_name}, 任务={task_name}",
             )
+
+            if progress_callback:
+                try:
+                    final_phase = "completed" if success else "failed"
+                    final_text = "任务已完成" if success else "执行失败"
+                    await progress_callback(final_phase, final_text, msg)
+                except Exception:
+                    logger.exception("签到任务进度回调失败: 阶段=completed")
 
             # 延迟清理日志（同一 task_key 仅保留一个 cleanup 协程）
             old_cleanup_task = self._cleanup_tasks.get(task_key)
