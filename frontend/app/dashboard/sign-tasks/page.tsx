@@ -8,6 +8,7 @@ import {
     listSignTasks,
     deleteSignTask,
     runSignTask,
+    getSignTaskStatus,
     getSignTaskHistory,
     getSignTaskMonitorWebSocketUrl,
     listAccounts,
@@ -114,14 +115,15 @@ export default function SignTasksPage() {
     const [runLogs, setRunLogs] = useState<string[]>([]);
     const [runMessages, setRunMessages] = useState<SignTaskMessageEvent[]>([]);
     const [runMonitorTab, setRunMonitorTab] = useState<"logs" | "messages">("logs");
-    const [runResult, setRunResult] = useState<{ success: boolean; output: string; error: string } | null>(null);
+    const [runResult, setRunResult] = useState<{ accepted?: boolean; success: boolean; output: string; error: string; status?: string; status_text?: string; phase?: string; phase_text?: string; message?: string } | null>(null);
+    const [runStatus, setRunStatus] = useState<any | null>(null);
     const [isDone, setIsDone] = useState(false);
     const [historyTask, setHistoryTask] = useState<SignTask | null>(null);
     const [historyLogs, setHistoryLogs] = useState<SignTaskHistoryItem[]>([]);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyTab, setHistoryTab] = useState<"messages" | "logs">("messages");
     const runSocketRef = useRef<WebSocket | null>(null);
-    const runResultRef = useRef<{ success: boolean; output: string; error: string } | null>(null);
+    const runResultRef = useRef<{ accepted?: boolean; success: boolean; output: string; error: string; status?: string; status_text?: string; phase?: string; phase_text?: string; message?: string } | null>(null);
 
     const addToastRef = useRef(addToast);
     const tRef = useRef(t);
@@ -146,6 +148,7 @@ export default function SignTasksPage() {
         setRunLogs([]);
         setRunMessages([]);
         setRunResult(null);
+        setRunStatus(null);
         runResultRef.current = null;
         setRunMonitorTab("logs");
         setIsDone(false);
@@ -221,6 +224,7 @@ export default function SignTasksPage() {
             setRunLogs([]);
             setRunMessages([]);
             setRunResult(null);
+            setRunStatus(null);
             runResultRef.current = null;
             setRunMonitorTab("logs");
             setIsDone(false);
@@ -262,6 +266,7 @@ export default function SignTasksPage() {
 
             const result = await runSignTask(token, task.name, accountName);
             setRunResult(result);
+            setRunStatus(result);
             runResultRef.current = result;
 
             if (!result.success) {
@@ -272,7 +277,8 @@ export default function SignTasksPage() {
                     setIsDone(true);
                 }
             } else {
-                addToast(t("task_run_success").replace("{name}", task.name), "success");
+                const submittedMessage = result.message || (language === "zh" ? "任务已提交后台执行" : "Task submitted to run in the background");
+                addToast(submittedMessage, "success");
                 if (!runSocketRef.current) {
                     setIsDone(true);
                 }
@@ -288,6 +294,40 @@ export default function SignTasksPage() {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (!token || !runningTask || isDone) return;
+        let cancelled = false;
+        const poll = async () => {
+            try {
+                const status = await getSignTaskStatus(token, runningTask.name, runningTask.accountName);
+                if (cancelled) return;
+                setRunStatus(status);
+                if (Array.isArray(status.logs) && status.logs.length > 0) {
+                    setRunLogs(status.logs);
+                }
+                if (Array.isArray(status.message_events)) {
+                    setRunMessages(status.message_events);
+                }
+                if (!status.is_running && ["completed", "failed"].includes(status.status)) {
+                    setIsDone(true);
+                    if (status.status === "completed") {
+                        addToast(language === "zh" ? "任务已完成，可在历史中查看链式日志" : "Task completed. History is available.", "success");
+                    } else if (status.message || status.error) {
+                        addToast(status.message || status.error, "error");
+                    }
+                }
+            } catch {
+                // WebSocket remains the primary live channel; polling is best-effort.
+            }
+        };
+        poll();
+        const timer = window.setInterval(poll, 1000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, [token, runningTask, isDone, addToast, language]);
 
     const handleShowTaskHistory = async (task: SignTask) => {
         if (!token) return;
@@ -362,6 +402,8 @@ export default function SignTasksPage() {
     const latestRunSummary = (() => {
         const replySummary = summarizeIncomingMessages(runMessages, language);
         if (replySummary) return replySummary;
+        if (runStatus?.message) return runStatus.message;
+        if (runStatus?.last_log) return runStatus.last_log;
         if (runResult?.error) return runResult.error;
         if (runResult?.success && runLogs.length > 0) return runLogs[runLogs.length - 1];
         return t("logs_waiting");
@@ -623,7 +665,7 @@ export default function SignTasksPage() {
                                 <div className="rounded-xl border border-white/5 bg-white/5 p-3">
                                     <div className="text-main/40 uppercase tracking-wider mb-1">{t("task_monitor_status")}</div>
                                     <div className={`font-bold ${runResult && !runResult.success ? "status-text-danger" : isDone ? "status-text-success" : "text-[#b57dff]"}`}>
-                                        {runResult && !runResult.success ? t("failure") : isDone ? t("success") : t("task_running")}
+                                        {runStatus?.status_text || runStatus?.phase_text || (runResult && !runResult.success ? t("failure") : isDone ? t("success") : t("task_running"))}
                                     </div>
                                 </div>
                                 <div className="rounded-xl border border-white/5 bg-white/5 p-3">
@@ -635,6 +677,20 @@ export default function SignTasksPage() {
                                     <div className="text-main/80 break-all">{latestRunSummary}</div>
                                 </div>
                             </div>
+                            {runStatus?.status === "waiting_account_lock" && (
+                                <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-xs text-main/80">
+                                    <div className="font-bold text-amber-200">正在等待账号空闲</div>
+                                    <div>前序任务：{runStatus.blocking_task_name || "未知"}</div>
+                                    <div>前序阶段：{runStatus.blocking_phase_text || "未知"}</div>
+                                    <div>最后进度：{runStatus.blocking_last_log || runStatus.last_log || "等待前序任务更新"}</div>
+                                </div>
+                            )}
+                            {runStatus?.phase === "waiting_reply" && (
+                                <div className="mt-3 rounded-xl border border-[#8a3ffc]/20 bg-[#8a3ffc]/10 p-3 text-xs text-main/80">
+                                    <div className="font-bold text-[#d8c2ff]">等待机器人回复</div>
+                                    <div>{runStatus.message || runStatus.last_log || "正在等待机器人回复"}</div>
+                                </div>
+                            )}
                             <div className="flex items-center gap-2 mt-4">
                                 <button
                                     onClick={() => setRunMonitorTab("logs")}

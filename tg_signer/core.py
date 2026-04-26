@@ -1797,10 +1797,16 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
             return await self.send_dice(chat.chat_id, action.dice, chat.delete_after)
         self.context.waiter.add(chat.chat_id)
         start = time.perf_counter()
+        self.log(f"正在等待机器人回复，最长等待 {int(timeout)} 秒")
+        last_countdown_second = None
         last_message = None
         try:
             while time.perf_counter() - start < timeout:
                 await asyncio.sleep(0.3)
+                remaining = max(0, int(timeout - (time.perf_counter() - start)))
+                if remaining != last_countdown_second:
+                    last_countdown_second = remaining
+                    self.log(f"等待机器人回复中，剩余 {remaining} 秒")
                 messages_dict = self.context.chat_messages.get(chat.chat_id)
                 if not messages_dict:
                     continue
@@ -1826,6 +1832,7 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
                         elif isinstance(action, ClickButtonByCalculationProblemAction):
                             ok = await self._click_button_by_calculation_problem(action, message)
                         if ok:
+                            self.log("已收到机器人回复，正在处理")
                             # 将消息ID对应value置为None，保证收到消息的编辑时消息所处的顺序
                             self.context.chat_messages[chat.chat_id][message.id] = None
                             return None

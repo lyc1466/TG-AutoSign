@@ -41,6 +41,7 @@ from backend.scheduler import (  # noqa: E402
     shutdown_scheduler,
     sync_jobs,
 )
+from backend.services.sign_task_runner import get_sign_task_runner  # noqa: E402
 from backend.services.users import ensure_admin  # noqa: E402
 from backend.utils.paths import ensure_data_dirs  # noqa: E402
 
@@ -143,6 +144,7 @@ async def on_startup() -> None:
     Base.metadata.create_all(bind=get_engine())
     with get_session_local()() as db:
         ensure_admin(db)
+    await get_sign_task_runner().start()
     await init_scheduler(sync_on_startup=False)
 
     async def _post_startup() -> None:
@@ -160,5 +162,6 @@ async def on_startup() -> None:
 
 
 @app.on_event("shutdown")
-def on_shutdown() -> None:
+async def on_shutdown() -> None:
+    await get_sign_task_runner().stop()
     shutdown_scheduler()
