@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -30,6 +31,7 @@ def _is_safe_name(name: str) -> bool:
     return True
 
 settings = get_settings()
+logger = logging.getLogger("backend.config")
 
 
 class ConfigService:
@@ -261,7 +263,7 @@ class ConfigService:
                 return False
 
             # 确定任务名称
-            final_task_name = task_name or data.get("task_name", "imported_task")
+            final_task_name = task_name or data.get("task_name", "导入任务")
 
             config = data["config"]
             if account_name:
@@ -287,7 +289,7 @@ class ConfigService:
             批量导出 JSON 字符串
         """
         if not _is_safe_name(account_name):
-            raise ValueError(f"Invalid account_name: {account_name!r}")
+            raise ValueError(f"账号名称不合法: {account_name!r}")
         acc_dir = self.signs_dir / account_name
         tasks = []
 
@@ -337,28 +339,28 @@ class ConfigService:
         result: Dict[str, Any] = {"imported": 0, "skipped": 0, "errors": []}
 
         if not _is_safe_name(target_account_name):
-            result["errors"].append(f"Invalid target_account_name: {target_account_name!r}")
+            result["errors"].append(f"目标账号名称不合法: {target_account_name!r}")
             return result
 
         try:
             data = json.loads(json_str)
         except json.JSONDecodeError as exc:
-            result["errors"].append(f"Invalid JSON: {exc}")
+            result["errors"].append(f"JSON 格式无效: {exc}")
             return result
 
         if not isinstance(data, dict):
-            result["errors"].append("Invalid payload: top-level JSON value must be an object")
+            result["errors"].append("导入内容无效：顶层 JSON 必须是对象")
             return result
 
         tasks = data.get("tasks", [])
         if not isinstance(tasks, list):
-            result["errors"].append("Invalid payload: 'tasks' must be a list")
+            result["errors"].append("导入内容无效：tasks 字段必须是数组")
             return result
 
         for item in tasks:
             if not isinstance(item, dict):
                 result["errors"].append(
-                    f"Malformed task entry: expected object, got {type(item).__name__}"
+                    f"任务条目格式错误：应为对象，实际为 {type(item).__name__}"
                 )
                 continue
 
@@ -366,15 +368,15 @@ class ConfigService:
             config = item.get("config")
 
             if not isinstance(task_name, str) or not task_name:
-                result["errors"].append(f"Malformed task entry: invalid task_name in {item!r}")
+                result["errors"].append(f"任务条目格式错误：task_name 无效，内容为 {item!r}")
                 continue
             if not isinstance(config, dict):
                 result["errors"].append(
-                    f"Malformed task entry: invalid config for task {task_name!r}"
+                    f"任务条目格式错误：任务 {task_name!r} 的 config 无效"
                 )
                 continue
             if not _is_safe_name(task_name):
-                result["errors"].append(f"Invalid task_name: {task_name!r}")
+                result["errors"].append(f"任务名称不合法: {task_name!r}")
                 continue
 
             task_dir = self.signs_dir / target_account_name / task_name
@@ -387,7 +389,7 @@ class ConfigService:
             if self.save_sign_config(task_name, full_config):
                 result["imported"] += 1
             else:
-                result["errors"].append(f"Failed to save task: {task_name}")
+                result["errors"].append(f"保存任务失败: {task_name}")
 
         return result
 
@@ -504,7 +506,7 @@ class ConfigService:
                 if self.save_sign_config(task_name, config):
                     result["signs_imported"] += 1
                 else:
-                    result["errors"].append(f"Failed to import sign task: {task_name}")
+                    result["errors"].append(f"导入签到任务失败: {task_name}")
 
             # 导入监控任务
             for task_name, config in data.get("monitors", {}).items():
@@ -522,7 +524,7 @@ class ConfigService:
                     result["monitors_imported"] += 1
                 except OSError:
                     result["errors"].append(
-                        f"Failed to import monitor task: {task_name}"
+                        f"导入监控任务失败: {task_name}"
                     )
 
             # 导入设置 (新增)
@@ -534,7 +536,7 @@ class ConfigService:
                     self.save_global_settings(settings_data["global"])
                     result["settings_imported"] += 1
                 except Exception as e:
-                    result["errors"].append(f"Failed to import global settings: {e}")
+                    result["errors"].append(f"导入全局设置失败: {e}")
 
             # 导入 AI 配置
             if "ai" in settings_data and settings_data["ai"]:
@@ -547,7 +549,7 @@ class ConfigService:
                         self.save_ai_config(ai_conf["api_key"], ai_conf.get("base_url"), ai_conf.get("model"))
                         result["settings_imported"] += 1
                 except Exception as e:
-                    result["errors"].append(f"Failed to import AI config: {e}")
+                    result["errors"].append(f"导入 AI 配置失败: {e}")
 
             # 导入 Telegram 配置
             if "telegram" in settings_data:
@@ -557,7 +559,7 @@ class ConfigService:
                          self.save_telegram_config(str(tg_conf["api_id"]), tg_conf["api_hash"])
                          result["settings_imported"] += 1
                 except Exception as e:
-                    result["errors"].append(f"Failed to import Telegram config: {e}")
+                    result["errors"].append(f"导入 Telegram 配置失败: {e}")
 
             # 关键修复：清除 SignTaskService 缓存，否则前端刷新也看不到新任务
             try:
@@ -574,10 +576,10 @@ class ConfigService:
                 # 这里的职责主要是文件操作。清理 cache 是必须的。
                 pass
             except Exception as e:
-                 print(f"Failed to clear cache: {e}")
+                logger.warning("清理签到任务缓存失败: %s", e)
 
         except (json.JSONDecodeError, KeyError) as e:
-            result["errors"].append(f"Invalid JSON format: {str(e)}")
+            result["errors"].append(f"JSON 格式无效: {str(e)}")
 
         return result
 
@@ -946,9 +948,9 @@ class ConfigService:
             final_bot_token = str(existing.get("bot_token", "")).strip()
 
         if not final_bot_token:
-            raise ValueError("bot token is required")
+            raise ValueError("必须填写 Bot Token")
         if not normalized_chat_id:
-            raise ValueError("chat id is required")
+            raise ValueError("必须填写 Chat ID")
 
         config = {
             "bot_token": final_bot_token,

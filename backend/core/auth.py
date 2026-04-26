@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional
 
 import pyotp
@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.config import get_settings
 from backend.core.database import get_db
+from backend.core.logging import utc_now_naive
 from backend.core.runtime_config import get_auth_runtime_config
 from backend.core.security import verify_password
 from backend.models.user import User
@@ -22,7 +23,7 @@ settings = get_settings()
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
-    expire = datetime.utcnow() + (
+    expire = utc_now_naive() + (
         expires_delta or timedelta(hours=settings.access_token_expire_hours)
     )
     to_encode.update({"exp": expire})
@@ -57,7 +58,7 @@ def get_current_user(
 ) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail="无法验证登录凭证",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:

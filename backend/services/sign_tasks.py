@@ -9,12 +9,16 @@ import asyncio
 import json
 import logging
 import time
-import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.core.config import get_settings
+from backend.core.logging import (
+    build_formatter,
+    describe_exception,
+    format_log_line,
+)
 from backend.core.runtime_config import (
     get_sign_task_runtime_config,
     get_telegram_api_runtime_config,
@@ -148,8 +152,10 @@ class SignTaskService:
         self.run_history_dir = self.workdir / "history"
         self.signs_dir.mkdir(parents=True, exist_ok=True)
         self.run_history_dir.mkdir(parents=True, exist_ok=True)
-        print(
-            f"DEBUG: 初始化 SignTaskService, signs_dir={self.signs_dir}, exists={self.signs_dir.exists()}"
+        logger.info(
+            "初始化签到任务服务: signs_dir=%s, history_dir=%s",
+            self.signs_dir,
+            self.run_history_dir,
         )
         self._active_logs: Dict[tuple[str, str], List[str]] = {}  # (account, task) -> logs
         self._active_message_events: Dict[tuple[str, str], List[Dict[str, Any]]] = {}
@@ -174,6 +180,54 @@ class SignTaskService:
         self._cleanup_old_logs()
 
     @staticmethod
+    def _validate_execution_window(
+        *,
+        task_name: str,
+        sign_at: str,
+        execution_mode: str,
+        range_start: str,
+        range_end: str,
+    ) -> str:
+        normalized_mode = str(execution_mode or "fixed").strip().lower() or "fixed"
+        if normalized_mode not in {"fixed", "range"}:
+            raise ValueError(
+                f"任务 {task_name} 的执行模式无效，仅支持 fixed 或 range"
+            )
+
+        if normalized_mode == "range":
+            start_text = str(range_start or "").strip()
+            end_text = str(range_end or "").strip()
+            if not start_text or not end_text:
+                raise ValueError(
+                    f"任务 {task_name} 使用随机时间段模式时必须同时填写开始时间和结束时间"
+                )
+            for label, value in (("开始时间", start_text), ("结束时间", end_text)):
+                try:
+                    datetime.strptime(value, "%H:%M")
+                except ValueError as exc:
+                    raise ValueError(
+                        f"任务 {task_name} 的{label}格式无效，必须为 HH:MM"
+                    ) from exc
+            return normalized_mode
+
+        if not str(sign_at or "").strip():
+            raise ValueError(f"任务 {task_name} 的固定执行时间不能为空")
+        return normalized_mode
+
+    def _append_active_log(
+        self,
+        task_key: tuple[str, str],
+        message: str,
+        *,
+        level: str = "INFO",
+        logger_name: str = "backend.sign_tasks",
+    ) -> None:
+        logs = self._active_logs.setdefault(task_key, [])
+        logs.append(format_log_line(message, level=level, logger_name=logger_name))
+        if len(logs) > 1000:
+            del logs[:-1000]
+
+    @staticmethod
     def _task_requires_updates(task_config: Optional[Dict[str, Any]]) -> bool:
         """
         判断任务是否依赖 update handlers。
@@ -186,7 +240,7 @@ class SignTaskService:
         chats = _normalize_task_chats(raw_chats, task_config.get("_version"))
         if not chats:
             return False
-        response_actions = {1, 2, 3, 4, 5, 6, 7}
+        response_actions = {3, 4, 5, 6, 7}
         for chat in chats:
             actions = chat.get("actions")
             if not isinstance(actions, list):
@@ -207,6 +261,7 @@ class SignTaskService:
         from datetime import datetime, timedelta
 
         if not self.run_history_dir.exists():
+            logger.info("签到任务历史目录不存在，跳过清理: %s", self.run_history_dir)
             return
 
         limit = datetime.now() - timedelta(days=3)
@@ -214,7 +269,12 @@ class SignTaskService:
             if log_file.stat().st_mtime < limit.timestamp():
                 try:
                     log_file.unlink()
-                except Exception:
+                except Exception as exc:
+                    logger.warning(
+                        "清理过期签到历史失败: 路径=%s, 错误=%s",
+                        log_file,
+                        describe_exception(exc),
+                    )
                     continue
 
     def _safe_history_key(self, name: str) -> str:
@@ -362,7 +422,7 @@ class SignTaskService:
         if not summaries:
             return ""
 
-        summary = f"收到 {len(summaries)} 条回复，最后一条：{summaries[-1]}"
+        summary = f"收到 {len(summaries)} 条消息"
         return summary[:200] if len(summary) <= 200 else summary[:197] + "..."
 
     def _load_history_entries(
@@ -700,7 +760,13 @@ class SignTaskService:
                         with open(config_file, "w", encoding="utf-8") as f:
                             json.dump(config, f, ensure_ascii=False, indent=2)
                     except Exception as e:
-                        print(f"DEBUG: 更新任务配置 last_run 失败: {e}")
+                        logger.warning(
+                            "更新签到任务 last_run 失败: 账号=%s, 任务=%s, 配置文件=%s, 错误=%s",
+                            account_name,
+                            task_name,
+                            config_file,
+                            describe_exception(e),
+                        )
 
             # 2. 更新内存缓存 (关键优化：避免置空 self._tasks_cache)
             if self._tasks_cache is not None:
@@ -710,18 +776,25 @@ class SignTaskService:
                         break
 
         except Exception as e:
-            print(f"DEBUG: 保存运行信息失败: {str(e)}")
+            logger.exception(
+                "保存签到任务运行历史失败: 账号=%s, 任务=%s, 错误=%s",
+                account_name,
+                task_name,
+                describe_exception(e),
+            )
 
     def _append_scheduler_log(self, filename: str, message: str) -> None:
         try:
             logs_dir = settings.resolve_logs_dir()
             logs_dir.mkdir(parents=True, exist_ok=True)
             log_path = logs_dir / filename
-            with open(log_path, 'a', encoding='utf-8') as f:
-                f.write(f'{message}\n')
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"{message}\n")
         except Exception as e:
-            logging.getLogger('backend.sign_tasks').warning(
-                'Failed to write scheduler log %s: %s', filename, e
+            logging.getLogger("backend.sign_tasks").warning(
+                "写入调度补充日志失败: 文件=%s, 错误=%s",
+                filename,
+                describe_exception(e),
             )
 
     def list_tasks(
@@ -742,7 +815,11 @@ class SignTaskService:
         tasks = []
         base_dir = self.signs_dir
 
-        print(f"DEBUG: 扫描任务目录: {base_dir}")
+        if not base_dir.exists():
+            logger.info("签到任务目录不存在，返回空列表: %s", base_dir)
+            return []
+
+        logger.info("开始扫描签到任务目录: %s", base_dir)
         try:
             # 扫描所有子目录 (账号名)
             for account_path in base_dir.iterdir():
@@ -776,7 +853,11 @@ class SignTaskService:
             return self._tasks_cache
 
         except Exception as e:
-            print(f"DEBUG: 扫描任务出错: {str(e)}")
+            logger.exception(
+                "扫描签到任务目录失败: 目录=%s, 错误=%s",
+                base_dir,
+                describe_exception(e),
+            )
             return []
 
     def _load_task_config(self, task_dir: Path) -> Optional[Dict[str, Any]]:
@@ -811,7 +892,12 @@ class SignTaskService:
                 "range_start": config.get("range_start", ""),
                 "range_end": config.get("range_end", ""),
             }
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "加载签到任务配置失败: 任务目录=%s, 错误=%s",
+                task_dir,
+                describe_exception(exc),
+            )
             return None
 
     def get_task(
@@ -883,11 +969,21 @@ class SignTaskService:
         if not account_name:
             raise ValueError("必须指定账号名称")
 
+        normalized_mode = self._validate_execution_window(
+            task_name=task_name,
+            sign_at=sign_at,
+            execution_mode=execution_mode,
+            range_start=range_start or "",
+            range_end=range_end or "",
+        )
+
         account_dir = self.signs_dir / account_name
         account_dir.mkdir(parents=True, exist_ok=True)
 
         task_dir = account_dir / task_name
-        task_dir.mkdir(parents=True, exist_ok=True)
+        if task_dir.exists():
+            raise ValueError(f"任务 {task_name} 已存在，请勿重复创建")
+        task_dir.mkdir(parents=True, exist_ok=False)
 
         # 获取 sign_interval
         if sign_interval is None:
@@ -905,7 +1001,7 @@ class SignTaskService:
             "random_seconds": random_seconds,
             "sign_interval": sign_interval,
             "chats": chats,
-            "execution_mode": execution_mode,
+            "execution_mode": normalized_mode,
             "range_start": range_start,
             "range_end": range_end,
         }
@@ -916,7 +1012,13 @@ class SignTaskService:
             with open(config_file, "w", encoding="utf-8") as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"DEBUG: 写入配置文件失败: {str(e)}")
+            logger.exception(
+                "写入签到任务配置失败: 账号=%s, 任务=%s, 配置文件=%s, 错误=%s",
+                account_name,
+                task_name,
+                config_file,
+                describe_exception(e),
+            )
             raise
 
         # Invalidate cache
@@ -932,7 +1034,19 @@ class SignTaskService:
                 enabled=True,
             )
         except Exception as e:
-            print(f"DEBUG: 更新调度任务失败: {e}")
+            logger.warning(
+                "创建签到任务后更新调度失败: 账号=%s, 任务=%s, 错误=%s",
+                account_name,
+                task_name,
+                describe_exception(e),
+            )
+        else:
+            logger.info(
+                "创建签到任务成功: 账号=%s, 任务=%s, 模式=%s",
+                account_name,
+                task_name,
+                normalized_mode,
+            )
 
         return {
             "name": task_name,
@@ -977,6 +1091,20 @@ class SignTaskService:
         )
 
         # 更新配置
+        normalized_mode = self._validate_execution_window(
+            task_name=new_task_name or task_name,
+            sign_at=sign_at if sign_at is not None else existing["sign_at"],
+            execution_mode=execution_mode
+            if execution_mode is not None
+            else existing.get("execution_mode", "fixed"),
+            range_start=range_start
+            if range_start is not None
+            else existing.get("range_start", ""),
+            range_end=range_end
+            if range_end is not None
+            else existing.get("range_end", ""),
+        )
+
         config = {
             "_version": 4,
             "account_name": acc_name,
@@ -988,9 +1116,7 @@ class SignTaskService:
             if sign_interval is not None
             else existing["sign_interval"],
             "chats": chats if chats is not None else existing["chats"],
-            "execution_mode": execution_mode
-            if execution_mode is not None
-            else existing.get("execution_mode", "fixed"),
+            "execution_mode": normalized_mode,
             "range_start": range_start
             if range_start is not None
             else existing.get("range_start", ""),
@@ -1037,15 +1163,30 @@ class SignTaskService:
                 enabled=True,
             )
         except Exception as e:
-            msg = f"DEBUG: 更新调度任务失败: {e}"
-            print(msg)
+            msg = (
+                f"更新签到任务调度失败: 账号={config['account_name']}, "
+                f"任务={effective_task_name}, 错误={describe_exception(e)}"
+            )
+            logger.warning(msg)
             self._append_scheduler_log(
-                "scheduler_error.log", f"{datetime.now()}: {msg}"
+                "scheduler_error.log", format_log_line(msg, logger_name="backend.sign_tasks")
             )
         else:
+            logger.info(
+                "更新签到任务成功: 账号=%s, 任务=%s, 模式=%s",
+                config["account_name"],
+                effective_task_name,
+                normalized_mode,
+            )
             self._append_scheduler_log(
                 "scheduler_update.log",
-                f"{datetime.now()}: Updated task {effective_task_name} with cron {config.get('range_start') if config.get('execution_mode') == 'range' else config['sign_at']}",
+                format_log_line(
+                    (
+                        f"已更新任务调度: 任务={effective_task_name}, CRON="
+                        f"{config.get('range_start') if config.get('execution_mode') == 'range' else config['sign_at']}"
+                    ),
+                    logger_name="backend.sign_tasks",
+                ),
             )
 
         return {
@@ -1110,10 +1251,29 @@ class SignTaskService:
 
                     remove_sign_task_job(real_account_name, task_name)
                 except Exception as e:
-                    print(f"DEBUG: 移除调度任务失败: {e}")
+                    logger.warning(
+                        "删除签到任务后移除调度失败: 账号=%s, 任务=%s, 错误=%s",
+                        real_account_name,
+                        task_name,
+                        describe_exception(e),
+                    )
+
+            logger.info(
+                "删除签到任务成功: 账号=%s, 任务=%s, 路径=%s",
+                real_account_name,
+                task_name,
+                task_dir,
+            )
 
             return True
-        except Exception:
+        except Exception as exc:
+            logger.exception(
+                "删除签到任务失败: 账号=%s, 任务=%s, 路径=%s, 错误=%s",
+                real_account_name,
+                task_name,
+                task_dir,
+                describe_exception(exc),
+            )
             return False
 
     async def get_account_chats(
@@ -1220,7 +1380,11 @@ class SignTaskService:
 
             await get_telegram_service().delete_account(account_name)
         except Exception as e:
-            print(f"DEBUG: 清理无效 Session 失败: {e}")
+            logger.warning(
+                "清理无效 Session 失败: 账号=%s, 错误=%s",
+                account_name,
+                describe_exception(e),
+            )
 
         # 清理 chats 缓存，避免后续误用旧数据
         try:
@@ -1288,8 +1452,9 @@ class SignTaskService:
         client = get_client(**client_kwargs)
 
         chats: List[Dict[str, Any]] = []
-        logger = logging.getLogger("backend")
+        backend_logger = logging.getLogger("backend")
         try:
+            logger.info("开始刷新账号对话列表: 账号=%s", account_name)
             # 初始化账号锁（跨服务共享）
             if account_name not in self._account_locks:
                 self._account_locks[account_name] = get_account_lock(account_name)
@@ -1310,14 +1475,16 @@ class SignTaskService:
                                     try:
                                         chat = getattr(dialog, "chat", None)
                                         if chat is None:
-                                            logger.warning(
-                                                "get_dialogs 返回空 chat，已跳过"
+                                            backend_logger.warning(
+                                                "刷新账号对话时收到空 chat，已跳过: 账号=%s",
+                                                account_name,
                                             )
                                             continue
                                         chat_id = getattr(chat, "id", None)
                                         if chat_id is None:
-                                            logger.warning(
-                                                "get_dialogs 返回 chat.id 为空，已跳过"
+                                            backend_logger.warning(
+                                                "刷新账号对话时收到空 chat.id，已跳过: 账号=%s",
+                                                account_name,
                                             )
                                             continue
 
@@ -1337,14 +1504,18 @@ class SignTaskService:
 
                                         local_chats.append(chat_info)
                                     except Exception as e:
-                                        logger.warning(
-                                            f"处理 dialog 失败，已跳过: {type(e).__name__}: {e}"
+                                        backend_logger.warning(
+                                            "处理对话条目失败，已跳过: 账号=%s, 错误=%s",
+                                            account_name,
+                                            describe_exception(e),
                                         )
                                         continue
                             except Exception as e:
                                 # Pyrogram 边界异常：保留已获取结果
-                                logger.warning(
-                                    f"get_dialogs 中断，返回已获取结果: {type(e).__name__}: {e}"
+                                backend_logger.warning(
+                                    "拉取对话列表被中断，返回已获取结果: 账号=%s, 错误=%s",
+                                    account_name,
+                                    describe_exception(e),
                                 )
                 return local_chats
 
@@ -1353,10 +1524,10 @@ class SignTaskService:
             except Exception as e:
                 if self._is_invalid_session_error(e):
                     if fallback_session_string and not used_fallback_session:
-                        logger.warning(
-                            "Session invalid for %s, retry with session_string: %s",
+                        backend_logger.warning(
+                            "账号 Session 失效，准备回退到 session_string 重试: 账号=%s, 错误=%s",
                             account_name,
-                            e,
+                            describe_exception(e),
                         )
                         try:
                             from tg_signer.core import close_client_by_name
@@ -1372,10 +1543,10 @@ class SignTaskService:
                         client = get_client(**retry_kwargs)
                         chats = await _fetch_chats(client)
                     else:
-                        logger.warning(
-                            "Session invalid for %s: %s",
+                        backend_logger.warning(
+                            "账号 Session 已失效，准备清理本地状态: 账号=%s, 错误=%s",
                             account_name,
-                            e,
+                            describe_exception(e),
                         )
                         await self._cleanup_invalid_session(account_name)
                         raise ValueError(f"账号 {account_name} 登录已失效，请重新登录")
@@ -1391,13 +1562,29 @@ class SignTaskService:
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump(chats, f, ensure_ascii=False, indent=2)
             except Exception as e:
-                print(f"DEBUG: 保存 Chat 缓存失败: {e}")
+                logger.warning(
+                    "保存账号对话缓存失败: 账号=%s, 缓存文件=%s, 错误=%s",
+                    account_name,
+                    cache_file,
+                    describe_exception(e),
+                )
 
+            logger.info(
+                "刷新账号对话列表完成: 账号=%s, 对话数量=%s, 是否使用回退会话=%s",
+                account_name,
+                len(chats),
+                used_fallback_session,
+            )
             return chats
 
         except Exception as e:
             # client 上下文管理器会自动处理 disconnect/stop，这里只需要处理业务异常
-            raise e
+            logger.exception(
+                "刷新账号对话列表失败: 账号=%s, 错误=%s",
+                account_name,
+                describe_exception(e),
+            )
+            raise
 
     async def run_task(self, account_name: str, task_name: str) -> Dict[str, Any]:
         """
@@ -1478,19 +1665,52 @@ class SignTaskService:
     ) -> Dict[str, Any]:
         """运行任务并实时捕获日志 (In-Process)"""
 
+        account_name = str(account_name or "").strip()
+        task_name = str(task_name or "").strip()
+        if not account_name:
+            error_msg = "账号名称不能为空"
+            return {
+                "success": False,
+                "error": error_msg,
+                "output": format_log_line(
+                    f"执行前校验失败：{error_msg}",
+                    level="ERROR",
+                    logger_name="backend.sign_tasks",
+                ),
+            }
+        if not task_name:
+            error_msg = "任务名称不能为空"
+            return {
+                "success": False,
+                "error": error_msg,
+                "output": format_log_line(
+                    f"执行前校验失败：{error_msg}",
+                    level="ERROR",
+                    logger_name="backend.sign_tasks",
+                ),
+            }
+
         if self.is_task_running(task_name, account_name):
-            return {"success": False, "error": "任务已经在运行中", "output": ""}
+            logger.warning(
+                "拒绝重复执行签到任务: 账号=%s, 任务=%s",
+                account_name,
+                task_name,
+            )
+            return {
+                "success": False,
+                "error": "任务已经在运行中",
+                "output": format_log_line(
+                    "检测到同一任务仍在运行，本次执行请求已被拒绝",
+                    level="WARNING",
+                    logger_name="backend.sign_tasks",
+                ),
+            }
 
         # 初始化账号锁（跨服务共享）
         if account_name not in self._account_locks:
             self._account_locks[account_name] = get_account_lock(account_name)
 
         account_lock = self._account_locks[account_name]
-
-        # 检查是否能获取锁 (非阻塞检查，如果已被锁定则说明该账号有其他任务在运行)
-        # 这里我们希望排队等待，还是直接报错？
-        # 考虑到定时任务同时触发，应该排队执行。
-        print(f"DEBUG: 等待获取账号锁 {account_name}...")
 
         task_key = self._task_key(account_name, task_name)
         self._active_tasks[task_key] = True
@@ -1502,36 +1722,55 @@ class SignTaskService:
         tg_logger = logging.getLogger("tg-signer")
         log_handler = TaskLogHandler(self._active_logs[task_key])
         log_handler.setLevel(logging.INFO)
-        log_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
+        log_handler.setFormatter(build_formatter(include_source=False))
         tg_logger.addHandler(log_handler)
 
         success = False
         error_msg = ""
         output_str = ""
+        validation_passed = False
 
         try:
+            self._append_active_log(
+                task_key,
+                f"开始执行签到任务: 账号={account_name}, 任务={task_name}",
+            )
+            logger.info("开始执行签到任务: 账号=%s, 任务=%s", account_name, task_name)
+
+            task_cfg = self.get_task(task_name, account_name=account_name)
+            if not task_cfg:
+                raise ValueError("未找到签到任务配置")
+
+            self._append_active_log(task_key, "任务配置校验通过")
+
+            if account_lock.locked():
+                self._append_active_log(
+                    task_key,
+                    "检测到账号执行锁已被占用，当前任务将排队等待前序任务完成",
+                    level="WARNING",
+                )
+
             async with account_lock:
+                self._append_active_log(task_key, "已获取账号执行锁，开始准备运行环境")
                 last_end = self._account_last_run_end.get(account_name)
                 if last_end:
                     gap = time.time() - last_end
                     wait_seconds = self._account_cooldown_seconds - gap
                     if wait_seconds > 0:
-                        self._active_logs[task_key].append(
-                            f"等待账号冷却 {int(wait_seconds)} 秒"
+                        self._append_active_log(
+                            task_key,
+                            f"账号仍在冷却期，等待 {int(wait_seconds)} 秒后继续执行",
                         )
                         await asyncio.sleep(wait_seconds)
-
-                print(f"DEBUG: 已获取账号锁 {account_name}，开始执行任务 {task_name}")
-                self._active_logs[task_key].append(
-                    f"开始执行任务: {task_name} (账号: {account_name})"
-                )
 
                 api_runtime = get_telegram_api_runtime_config()
                 api_id = api_runtime.api_id
                 api_hash = api_runtime.api_hash
 
                 if not api_runtime.is_configured:
-                    raise ValueError("未配置 Telegram API ID 或 API Hash")
+                    raise ValueError(
+                        "Telegram API 未配置，请先在系统设置中填写 API ID 和 API Hash"
+                    )
 
                 session_dir = settings.resolve_session_dir()
                 session_mode = get_session_mode()
@@ -1540,6 +1779,14 @@ class SignTaskService:
                 proxy_dict = resolve_proxy_dict(
                     account_proxy=get_account_proxy(account_name)
                 )
+                self._append_active_log(
+                    task_key,
+                    f"当前会话模式：{'session_string' if session_mode == 'string' else 'session 文件'}",
+                )
+                if proxy_dict:
+                    self._append_active_log(task_key, "检测到账号代理配置，执行时将通过代理连接")
+                else:
+                    self._append_active_log(task_key, "未检测到账号代理配置，将使用直连模式")
 
                 if session_mode == "string":
                     session_string = (
@@ -1547,7 +1794,9 @@ class SignTaskService:
                         or load_session_string_file(session_dir, account_name)
                     )
                     if not session_string:
-                        raise ValueError(f"账号 {account_name} 的 session_string 不存在")
+                        raise ValueError(
+                            f"账号 {account_name} 未找到有效的 session_string，请重新登录"
+                        )
                     use_in_memory = True
                 else:
                     session_string = None
@@ -1558,19 +1807,32 @@ class SignTaskService:
                             session_dir, account_name
                         )
                         use_in_memory = bool(session_string)
+                        if use_in_memory:
+                            self._append_active_log(
+                                task_key,
+                                "已启用强制内存 Session 模式，并成功加载 session_string",
+                            )
+                        else:
+                            self._append_active_log(
+                                task_key,
+                                "已启用强制内存 Session 模式，但未找到 session_string，将继续使用文件 Session",
+                                level="WARNING",
+                            )
 
-                task_cfg = self.get_task(task_name, account_name=account_name)
                 requires_updates = self._task_requires_updates(task_cfg)
                 signer_no_updates = not requires_updates
-                self._active_logs[task_key].append(
-                    f"消息更新监听: {'开启' if requires_updates else '关闭'}"
+                self._append_active_log(
+                    task_key,
+                    f"消息更新监听：{'开启' if requires_updates else '关闭'}",
                 )
+                validation_passed = True
 
                 # 实例化 UserSigner (使用 BackendUserSigner)
                 # 注意: UserSigner 内部会使用 get_client 复用 client
                 async def handle_message_event(event: Dict[str, Any]) -> None:
                     self.append_active_message_event(account_name, task_name, event)
 
+                self._append_active_log(task_key, "正在初始化签到执行器")
                 signer = BackendUserSigner(
                     task_name=task_name,
                     session_dir=str(session_dir),
@@ -1587,39 +1849,72 @@ class SignTaskService:
 
                 # 执行任务（数据库锁冲突时重试）
                 async with get_global_semaphore():
+                    self._append_active_log(task_key, "已获取全局执行信号量，准备开始任务动作")
                     max_retries = 3
                     for attempt in range(max_retries):
+                        current_attempt = attempt + 1
+                        self._append_active_log(
+                            task_key, f"准备进行第 {current_attempt} 次执行尝试"
+                        )
                         try:
                             await signer.run_once(num_of_dialogs=20)
+                            self._append_active_log(
+                                task_key, f"第 {current_attempt} 次执行尝试已完成"
+                            )
                             break
                         except Exception as e:
                             if "database is locked" in str(e).lower():
                                 if attempt < max_retries - 1:
                                     delay = (attempt + 1) * 3
-                                    self._active_logs[task_key].append(
-                                        f"Session 被锁定，{delay} 秒后重试..."
+                                    self._append_active_log(
+                                        task_key,
+                                        f"检测到 Session 数据库锁，将在 {delay} 秒后重试",
+                                        level="WARNING",
+                                    )
+                                    logger.warning(
+                                        "签到任务执行遇到数据库锁: 账号=%s, 任务=%s, 尝试次数=%s/%s, 错误=%s",
+                                        account_name,
+                                        task_name,
+                                        current_attempt,
+                                        max_retries,
+                                        describe_exception(e),
                                     )
                                     await asyncio.sleep(delay)
                                     continue
+                            self._append_active_log(
+                                task_key,
+                                f"第 {current_attempt} 次执行尝试失败：{describe_exception(e)}",
+                                level="ERROR",
+                            )
                             raise
 
                 success = True
-                self._active_logs[task_key].append("任务执行完成")
+                self._append_active_log(task_key, "签到任务执行完成")
 
                 # 增加缓冲时间，防止同账号连续执行任务时，Session文件锁尚未完全释放导致 "database is locked"
+                self._append_active_log(
+                    task_key,
+                    "执行完成后等待 2 秒，尽量避免连续任务触发 Session 文件锁",
+                )
                 await asyncio.sleep(2)
 
         except Exception as e:
-            error_msg = f"任务执行出错: {str(e)}"
-            self._active_logs[task_key].append(error_msg)
-            # 打印堆栈以便调试
-            traceback.print_exc()
-            error_logger = logging.getLogger("backend")
-            error_logger.error(error_msg)
+            error_detail = describe_exception(e)
+            phase = "任务执行异常" if validation_passed else "执行前校验失败"
+            error_msg = f"{phase}：{error_detail}"
+            self._append_active_log(task_key, error_msg, level="ERROR")
+            logger.exception(
+                "签到任务执行失败: 账号=%s, 任务=%s, 阶段=%s, 错误=%s",
+                account_name,
+                task_name,
+                phase,
+                error_detail,
+            )
         finally:
             self._account_last_run_end[account_name] = time.time()
             self._active_tasks[task_key] = False
-            tg_logger.removeHandler(log_handler)
+            if log_handler in tg_logger.handlers:
+                tg_logger.removeHandler(log_handler)
 
             # 保存执行记录
             final_logs = list(self._active_logs.get(task_key, []))
@@ -1651,10 +1946,7 @@ class SignTaskService:
                     finished_at=finished_at,
                 ),
                 logger=logger,
-                description=(
-                    "Failed to send sign task completion notification "
-                    f"for account={account_name}, task={task_name}"
-                ),
+                description=f"发送签到任务完成通知失败: 账号={account_name}, 任务={task_name}",
             )
 
             # 延迟清理日志（同一 task_key 仅保留一个 cleanup 协程）

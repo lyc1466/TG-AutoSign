@@ -52,6 +52,35 @@ const EMPTY_LOGIN_DATA = {
 };
 const DASHBOARD_STATUS_CHECKED_KEY = "tg-signpulse:dashboard-status-checked";
 const DASHBOARD_STATUS_CACHE_KEY = "tg-signpulse:dashboard-status-cache";
+const GENERIC_ACCOUNT_LOG_MESSAGES = new Set([
+  "Success",
+  "Failed",
+  "执行成功",
+  "执行失败",
+  "任务执行完成",
+  "任务执行失败",
+  "Task completed",
+  "Task failed",
+]);
+
+const getAccountLogLatestMessage = (log: AccountLog) =>
+  (log.latest_message || log.bot_message || "").trim();
+
+const normalizeAccountLogMessage = (message: string | undefined, latestMessage: string) => {
+  const trimmed = (message || "").trim();
+  if (!trimmed || GENERIC_ACCOUNT_LOG_MESSAGES.has(trimmed)) return "";
+
+  const receivedMatch = trimmed.match(/^收到\s+(\d+)\s+条(?:回复|消息)(?:，最后一条：.*)?$/);
+  if (receivedMatch) {
+    return `收到 ${receivedMatch[1]} 条消息`;
+  }
+
+  if (latestMessage && trimmed.includes(`最后一条：${latestMessage}`)) {
+    return trimmed.replace(`，最后一条：${latestMessage}`, "").trim();
+  }
+
+  return trimmed;
+};
 
 export default function Dashboard() {
   const router = useRouter();
@@ -1036,8 +1065,8 @@ export default function Dashboard() {
                 const isCheckingOrError = currentStatus === "checking" || (currentStatus === "error" && !statusInfo?.needs_relogin);
                 // Since proactive status testing was removed, default "checking" to valid UI unless error.
                 return isCheckingOrError || currentStatus === "connected" || currentStatus === "valid"
-                  ? "text-emerald-400"
-                  : "text-rose-400";
+                  ? "status-text-success"
+                  : "status-text-danger";
               })();
               return (
                 <div
@@ -1289,7 +1318,7 @@ export default function Dashboard() {
                       {qrPhase === "error" && t("qr_failed")}
                     </div>
                     {qrMessage ? (
-                      <div className="text-[11px] text-rose-400 text-center">{qrMessage}</div>
+                      <div className="text-[11px] status-text-danger text-center">{qrMessage}</div>
                     ) : null}
                   </div>
 
@@ -1438,7 +1467,7 @@ export default function Dashboard() {
                 <button
                   onClick={handleClearLogs}
                   disabled={loading}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 text-rose-400 text-[10px] font-bold hover:bg-rose-500/20 transition-all disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border status-badge-danger text-[10px] font-bold transition-all disabled:opacity-50"
                 >
                   <Trash weight="bold" size={14} />
                   {t("clear_logs")}
@@ -1446,7 +1475,7 @@ export default function Dashboard() {
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5 font-mono text-[13px] bg-black/10 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-5 bg-black/10 custom-scrollbar">
               {logsLoading ? (
                 <div className="flex flex-col items-center justify-center py-20 text-main/30">
                   <Spinner className="animate-spin mb-4" size={32} />
@@ -1456,30 +1485,35 @@ export default function Dashboard() {
                 <div className="text-center py-20 text-main/20 font-sans">{t("no_logs")}</div>
               ) : (
                 <div className="space-y-3">
-                  {accountLogs.map((log, i) => (
-                    <div key={i} className="p-4 rounded-xl bg-white/2 border border-white/5 group hover:border-white/10 transition-colors">
-                      <div className="flex justify-between items-center mb-2.5 text-[10px] uppercase tracking-wider font-bold">
-                        <span className="text-main/20 group-hover:text-main/40 transition-colors">{new Date(log.created_at).toLocaleString()}</span>
-                        <span className={`px-2 py-0.5 rounded-md ${log.success ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                          {log.success ? t("success") : t("failure")}
-                        </span>
-                      </div>
-                      <div className="text-main/70 font-semibold mb-2">
-                        {`${t("task_label")}：${log.task_name}${log.success ? t("task_exec_success") : t("task_exec_failed")}`}
-                      </div>
-                      {log.bot_message ? (
-                        <div className="text-main/60 leading-relaxed whitespace-pre-wrap break-words mb-2">
-                          <span className="text-main/35">{t("bot_reply")}：</span>
-                          {log.bot_message}
+                  {accountLogs.map((log, i) => {
+                    const latestMessage = getAccountLogLatestMessage(log);
+                    const detailMessage = normalizeAccountLogMessage(log.message, latestMessage);
+
+                    return (
+                      <div key={i} className="p-4 rounded-xl bg-white/2 border border-white/5 group hover:border-white/10 transition-colors">
+                        <div className="flex justify-between items-center mb-2.5 text-[10px] uppercase tracking-wider font-bold">
+                          <span className="ui-muted">{new Date(log.created_at).toLocaleString()}</span>
+                          <span className={`px-2 py-0.5 rounded-md border ${log.success ? 'status-badge-success' : 'status-badge-danger'}`}>
+                            {log.success ? t("success") : t("failure")}
+                          </span>
                         </div>
-                      ) : null}
-                      {log.message && !["Success", "Failed", "执行成功", "执行失败"].includes(log.message.trim()) ? (
-                        <pre className="whitespace-pre-wrap text-main/45 leading-relaxed overflow-x-auto max-h-[120px] scrollbar-none font-medium">
-                          {log.message}
-                        </pre>
-                      ) : null}
-                    </div>
-                  ))}
+                        <div className="text-main/80 font-semibold mb-2">
+                          {`${t("task_label")}：${log.task_name}${log.success ? t("task_exec_success") : t("task_exec_failed")}`}
+                        </div>
+                        {detailMessage ? (
+                          <div className="dashboard-log-message whitespace-pre-wrap break-words overflow-x-auto max-h-[120px] scrollbar-none mb-2">
+                            {detailMessage}
+                          </div>
+                        ) : null}
+                        {latestMessage ? (
+                          <div className="dashboard-log-message whitespace-pre-wrap break-words">
+                            <span className="dashboard-log-label">{t("bot_reply")}：</span>
+                            {latestMessage}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

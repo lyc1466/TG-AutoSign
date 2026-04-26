@@ -198,7 +198,7 @@ def setup_totp(
     if current_user.totp_secret:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="2FA 已启用，如需重新设置请先禁用",
+            detail="两步验证已启用，如需重新设置请先禁用",
         )
 
     # 生成新的 TOTP secret
@@ -247,7 +247,7 @@ def get_totp_qrcode(
     if not secret:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="请先调用 /totp/setup 设置2FA",
+            detail="请先调用 /totp/setup 设置两步验证",
         )
 
     # 生成 TOTP URI
@@ -286,7 +286,7 @@ def enable_totp(
     if not pending_secret:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="请先调用 /totp/setup 设置2FA",
+            detail="请先调用 /totp/setup 设置两步验证",
         )
 
     # 验证 TOTP 码
@@ -316,7 +316,7 @@ def cancel_totp_setup(current_user: User = Depends(get_current_user)):
     if current_user.id in _pending_totp_secrets:
         del _pending_totp_secrets[current_user.id]
 
-    return DisableTOTPResponse(success=True, message="2FA 设置已取消")
+    return DisableTOTPResponse(success=True, message="两步验证设置已取消")
 
 
 @router.post("/totp/disable", response_model=DisableTOTPResponse)
@@ -332,7 +332,7 @@ def disable_totp(
     """
     if not current_user.totp_secret:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="2FA 未启用"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="两步验证未启用"
         )
 
     # 验证 TOTP 码

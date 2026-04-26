@@ -99,7 +99,7 @@ def get_signer(
     default=".",
     show_default=True,
     type=click.Path(),
-    help="存储TG Sessions的目录, 可以是相对路径",
+    help="存储 Telegram 会话文件的目录，可以是相对路径",
 )
 @click.option(
     "--account",
@@ -127,14 +127,14 @@ def get_signer(
     show_default=True,
     show_envvar=True,
     envvar="TG_SESSION_STRING",
-    help="Telegram Session String, 会覆盖环境变量`TG_SESSION_STRING`的值",
+    help="Telegram 会话字符串，会覆盖环境变量`TG_SESSION_STRING`的值",
 )
 @click.option(
     "--in-memory",
     "in_memory",
     default=False,
     is_flag=True,
-    help="是否将session存储在内存中，默认为False，存储在文件",
+    help="是否将会话存储在内存中，默认为 False，即存储在文件中",
 )
 @click.pass_context
 def tg_signer(
@@ -163,10 +163,10 @@ def tg_signer(
     ]:
         if proxy:
             logger.info(
-                "Using proxy: %s"
+                "当前使用代理: %s"
                 % f"{proxy['scheme']}://{proxy['hostname']}:{proxy['port']}"
             )
-        logger.info(f"Using account: {account}")
+        logger.info("当前使用账号: %s", account)
     ctx.obj["proxy"] = proxy
     ctx.obj["session_dir"] = session_dir
     ctx.obj["account"] = account
@@ -175,7 +175,7 @@ def tg_signer(
     ctx.obj["in_memory"] = in_memory
 
 
-@tg_signer.command(help="Show version")
+@tg_signer.command(help="显示版本")
 def version():
     from tg_signer import __version__
 
@@ -224,7 +224,7 @@ def logout(obj):
 @click.pass_obj
 def run(obj, task_names, num_of_dialogs):
     if len(task_names) < 1:
-        raise click.UsageError("At least one task name is required")
+        raise click.UsageError("至少需要提供一个任务名称")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     coros = []
@@ -289,7 +289,7 @@ def send_text(obj, chat_id, text, delete_after=None):
 @click.pass_obj
 def send_dice(obj, chat_id, emoji, delete_after=None):
     singer = get_signer(None, obj)
-    click.echo("将发送单次DICE消息")
+    click.echo("将发送单次骰子消息")
     singer.app_run(singer.send_dice_cli(chat_id, emoji, delete_after))
 
 
@@ -306,7 +306,7 @@ def reconfig(obj, task_name):
     "--chat_id",
     "chat_id",
     required=True,
-    help="整数id或字符串username, username须以@开头",
+    help="整数 ID 或字符串用户名，用户名须以 @ 开头",
 )
 @click.option("--admin", "admin", default=False, is_flag=True, help="只列出管理员")
 @click.argument("query", nargs=1, default="")
@@ -428,7 +428,7 @@ def list_schedule_messages(obj, chat_id):
     "accounts",
     required=True,
     multiple=True,
-    help="多个account，每个account是一个自定义账号名称，对应session文件名为<account>.session",
+    help="多个账号，每个账号对应一个自定义账号名称，session 文件名为 <account>.session",
 )
 @click.option(
     "--num-of-dialogs",
@@ -441,7 +441,7 @@ def list_schedule_messages(obj, chat_id):
 @click.pass_obj
 def multi_run(obj, accounts, task_name, num_of_dialogs):
     logger = logging.getLogger("tg-signer")
-    logger.info(f"开始使用一套配置({task_name})同时运行多个账号..")
+    logger.info("开始使用同一套配置同时运行多个账号: 任务=%s", task_name)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     coros = []
@@ -452,7 +452,7 @@ def multi_run(obj, accounts, task_name, num_of_dialogs):
     loop.run_until_complete(asyncio.gather(*coros))
 
 
-@tg_signer.command(name="llm-config", help="配置大模型API")
+@tg_signer.command(name="llm-config", help="配置大模型 API")
 @click.pass_obj
 def llm_config(obj):
     from tg_signer.ai_tools import OpenAIConfigManager
@@ -463,7 +463,7 @@ def llm_config(obj):
 
 @tg_signer.command(
     name="webgui",
-    help="启动一个WebGUI（需要通过`pip install tg-signer[gui]`安装相关依赖）",
+    help="启动一个 Web 界面（需要通过`pip install tg-signer[gui]`安装相关依赖）",
 )
 @click.option("--host", "-H", "host", default="127.0.0.1", help="监听地址")
 @click.option("--port", "-P", "port", default=8080, help="监听端口")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
 from fastapi import (
@@ -24,6 +25,7 @@ from backend.schemas.task_log import TaskLogOut
 from backend.services import tasks as task_service
 
 router = APIRouter()
+logger = logging.getLogger("backend.api.tasks")
 
 
 @router.get("", response_model=list[TaskOut])
@@ -39,7 +41,7 @@ async def create_task(
 ):
     account = db.query(Account).filter(Account.id == payload.account_id).first()
     if not account:
-        raise HTTPException(status_code=404, detail="Account not found")
+        raise HTTPException(status_code=404, detail="账号不存在")
     task = task_service.create_task(
         db,
         name=payload.name,
@@ -59,7 +61,7 @@ def get_task(
 ):
     task = task_service.get_task(db, task_id)
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise HTTPException(status_code=404, detail="任务不存在")
     return task
 
 
@@ -72,11 +74,11 @@ async def update_task(
 ):
     task = task_service.get_task(db, task_id)
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise HTTPException(status_code=404, detail="任务不存在")
     if payload.account_id is not None:
         account = db.query(Account).filter(Account.id == payload.account_id).first()
         if not account:
-            raise HTTPException(status_code=404, detail="Account not found")
+            raise HTTPException(status_code=404, detail="账号不存在")
     updated = task_service.update_task(
         db,
         task,
@@ -97,7 +99,7 @@ async def delete_task(
 ):
     task = task_service.get_task(db, task_id)
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise HTTPException(status_code=404, detail="任务不存在")
     task_service.delete_task(db, task)
     await sync_jobs()
     return {"ok": True}
@@ -111,7 +113,7 @@ async def run_task(
 ):
     task = task_service.get_task(db, task_id)
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise HTTPException(status_code=404, detail="任务不存在")
     log = await task_service.run_task_once(db, task)
     return log
 
@@ -125,7 +127,7 @@ def list_logs(
 ):
     task = task_service.get_task(db, task_id)
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise HTTPException(status_code=404, detail="任务不存在")
     logs = task_service.list_task_logs(db, task_id, limit=limit)
     return logs
 
@@ -181,7 +183,7 @@ async def task_logs_ws(
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print(f"WS Error for Task {task_id}: {e}")
+        logger.exception("普通任务日志 WebSocket 推送失败: 任务 ID=%s, 错误=%s", task_id, e)
     finally:
         try:
             await websocket.close()
@@ -198,10 +200,10 @@ def get_log_output(
     """获取任务日志的完整输出文件内容"""
     log = db.query(TaskLog).filter(TaskLog.id == log_id).first()
     if not log:
-        raise HTTPException(status_code=404, detail="Log not found")
+        raise HTTPException(status_code=404, detail="日志不存在")
 
     if not log.log_path or not Path(log.log_path).exists():
-        return {"output": log.output or "No detailed log file available."}
+        return {"output": log.output or "暂无可用的详细日志文件。"}
 
     try:
         with open(log.log_path, "r", encoding="utf-8") as f:
@@ -209,5 +211,5 @@ def get_log_output(
         return {"output": content}
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Failed to read log file: {str(e)}"
+            status_code=500, detail=f"读取日志文件失败: {str(e)}"
         )

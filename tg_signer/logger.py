@@ -2,29 +2,14 @@ import logging
 import pathlib
 from logging.handlers import RotatingFileHandler
 
-
-class ExactLevelFilter(logging.Filter):
-    def __init__(self, level: int):
-        super().__init__()
-        self.level = level
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        return record.levelno == self.level
-
-
-class MinLevelFilter(logging.Filter):
-    def __init__(self, min_level: int):
-        super().__init__()
-        self.min_level = min_level
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        return record.levelno >= self.min_level
-
-
-format_str = (
-    "[%(levelname)s] [%(name)s] %(asctime)s %(filename)s %(lineno)s %(message)s"
+from backend.core.logging import (
+    ExactLevelFilter,
+    MinLevelFilter,
+    build_formatter,
+    ensure_sensitive_filter,
 )
-formatter = logging.Formatter(format_str)
+
+formatter = build_formatter(include_source=True)
 
 
 def configure_logger(
@@ -43,6 +28,7 @@ def configure_logger(
 
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
+    ensure_sensitive_filter(console_handler)
     logger.addHandler(console_handler)
 
     log_dir = pathlib.Path(log_dir)
@@ -55,6 +41,7 @@ def configure_logger(
         encoding="utf-8",
     )
     file_handler.setFormatter(formatter)
+    ensure_sensitive_filter(file_handler)
     logger.addHandler(file_handler)
 
     if logging.WARNING >= level_no:
@@ -67,6 +54,7 @@ def configure_logger(
         warn_file_handler.setLevel(logging.WARNING)
         warn_file_handler.addFilter(ExactLevelFilter(logging.WARNING))
         warn_file_handler.setFormatter(formatter)
+        ensure_sensitive_filter(warn_file_handler)
         logger.addHandler(warn_file_handler)
 
     if logging.ERROR >= level_no:
@@ -79,6 +67,7 @@ def configure_logger(
         error_file_handler.setLevel(logging.ERROR)
         error_file_handler.addFilter(MinLevelFilter(logging.ERROR))
         error_file_handler.setFormatter(formatter)
+        ensure_sensitive_filter(error_file_handler)
 
         logger.addHandler(error_file_handler)
     from backend.core.runtime_config import get_legacy_signer_runtime_config

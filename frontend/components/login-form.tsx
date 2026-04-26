@@ -36,9 +36,14 @@ export default function LoginForm() {
       let displayMsg = t("login_failed");
       const lowerMsg = msg.toLowerCase();
 
-      if (lowerMsg.includes("totp")) {
+      if (lowerMsg.includes("totp") || msg.includes("两步验证码")) {
         displayMsg = t("totp_error");
-      } else if (lowerMsg.includes("invalid") || lowerMsg.includes("credentials") || lowerMsg.includes("password")) {
+      } else if (
+        lowerMsg.includes("invalid") ||
+        lowerMsg.includes("credentials") ||
+        lowerMsg.includes("password") ||
+        msg.includes("用户名或密码")
+      ) {
         displayMsg = t("user_or_pass_error");
       } else if (!msg) {
         displayMsg = t("login_failed");

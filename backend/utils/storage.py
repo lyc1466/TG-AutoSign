@@ -90,10 +90,8 @@ def get_writable_base_dir() -> Path:
     fallback = Path(tempfile.gettempdir()) / "tg-signpulse"
     fallback.mkdir(parents=True, exist_ok=True)
     message = (
-        f"WARNING: /data is not writable. Falling back to {fallback}; "
-        "data may be non-persistent."
+        f"/data 不可写，已回退到临时目录 {fallback}；当前数据可能不会持久保存。"
     )
-    print(message)
     logging.getLogger("backend.storage").warning(message)
     _BASE_DIR = fallback
     return _BASE_DIR

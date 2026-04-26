@@ -528,7 +528,7 @@ export default function SettingsPage() {
                         <GithubLogo weight="bold" />
                     </a>
                     <div
-                        className="action-btn !text-rose-400 hover:bg-rose-500/10"
+                        className="action-btn status-action-danger"
                         title={t("logout")}
                         onClick={() => {
                             const { logout } = require("../../../lib/auth");
@@ -626,19 +626,19 @@ export default function SettingsPage() {
                     <div className="glass-panel p-4 overflow-hidden">
                         <div className="flex justify-between items-center mb-4">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-400">
+                                <div className="p-2 rounded-xl border status-badge-success">
                                     <ShieldCheck weight="bold" size={18} />
                                 </div>
                                 <h2 className="text-lg font-bold">{t("2fa_settings")}</h2>
                             </div>
-                            <div className={`shrink-0 bg-${totpEnabled ? 'emerald' : 'rose'}-500/10 border border-${totpEnabled ? 'emerald' : 'rose'}-500/20 text-${totpEnabled ? 'emerald' : 'rose'}-400 px-3 py-0.5 rounded-full text-[10px] font-bold`}>
+                            <div className={`shrink-0 border px-3 py-0.5 rounded-full text-[10px] font-bold ${totpEnabled ? 'status-badge-success' : 'status-badge-danger'}`}>
                                 {totpEnabled ? t("status_enabled") : t("status_disabled")}
                             </div>
                         </div>
 
                         {!totpEnabled && !showTotpSetup && (
                             <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-4 flex gap-4 items-start">
-                                <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
+                                <div className="p-2 rounded-lg border status-badge-success">
                                     <WarningCircle weight="bold" size={18} />
                                 </div>
                                 <div>
@@ -697,7 +697,7 @@ export default function SettingsPage() {
                         )}
 
                         {totpEnabled && (
-                            <button onClick={handleDisableTOTP} className="btn-secondary !text-rose-400 hover:bg-rose-500/10 w-fit px-6 !py-2.5 !text-xs" disabled={totpLoading}>
+                            <button onClick={handleDisableTOTP} className="btn-secondary status-action-danger w-fit px-6 !py-2.5 !text-xs" disabled={totpLoading}>
                                 {totpLoading ? <Spinner className="animate-spin" /> : t("disable_2fa")}
                             </button>
                         )}
@@ -713,7 +713,7 @@ export default function SettingsPage() {
                                 <h2 className="text-lg font-bold">{t("ai_config")}</h2>
                             </div>
                             {aiConfig && (
-                                <button onClick={handleDeleteAI} className="action-btn !w-8 !h-8 !text-rose-400" title={t("delete_ai_config")}>
+                                <button onClick={handleDeleteAI} className="action-btn !w-8 !h-8 status-action-danger" title={t("delete_ai_config")}>
                                     <Trash weight="bold" size={16} />
                                 </button>
                             )}
@@ -764,7 +764,7 @@ export default function SettingsPage() {
                         </div>
 
                         {aiTestResult && (
-                            <div className={`mt-4 p-3 rounded-xl text-[11px] border ${aiTestStatus === "success" ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'} animate-float-up`}>
+                            <div className={`mt-4 p-3 rounded-xl text-[11px] border ${aiTestStatus === "success" ? 'status-badge-success' : 'status-badge-danger'} animate-float-up`}>
                                 <div className="flex items-center gap-2 font-bold mb-0.5 uppercase tracking-wider text-[9px]">
                                     {aiTestStatus === "success" ? t("process_successful") : t("process_error")}
                                 </div>
@@ -870,7 +870,7 @@ export default function SettingsPage() {
                     <div className="glass-panel p-4">
                         <div className="flex justify-between items-center mb-4">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-400">
+                                <div className="p-2 rounded-xl border status-badge-success">
                                     <BotIcon weight="bold" size={18} />
                                 </div>
                                 <h2 className="text-lg font-bold">{t("telegram_notification_config")}</h2>
@@ -878,7 +878,7 @@ export default function SettingsPage() {
                             {telegramNotificationConfig.has_config && (
                                 <button
                                     onClick={handleDeleteTelegramNotification}
-                                    className="action-btn !w-8 !h-8 !text-rose-400"
+                                    className="action-btn !w-8 !h-8 status-action-danger"
                                     title={t("delete_notification_config")}
                                     disabled={telegramNotificationLoading}
                                 >
@@ -934,7 +934,7 @@ export default function SettingsPage() {
                                 {telegramNotificationLoading ? <Spinner className="animate-spin" /> : t("test_send")}
                             </button>
                             {telegramNotificationConfig.has_config && (
-                                <button className="btn-secondary w-fit px-5 !py-2 !text-[11px] !text-rose-400 hover:bg-rose-500/10" onClick={handleDeleteTelegramNotification} disabled={telegramNotificationLoading}>
+                                <button className="btn-secondary w-fit px-5 !py-2 !text-[11px] status-action-danger" onClick={handleDeleteTelegramNotification} disabled={telegramNotificationLoading}>
                                     {telegramNotificationLoading ? <Spinner className="animate-spin" /> : t("restore_default")}
                                 </button>
                             )}

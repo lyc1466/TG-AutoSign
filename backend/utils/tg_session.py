@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
 from backend.core.config import get_settings
+from backend.core.logging import utc_now_iso_z
 from backend.core.runtime_config import get_session_runtime_config
 
 _GLOBAL_SEMAPHORE: Optional[asyncio.Semaphore] = None
@@ -94,7 +94,7 @@ def set_account_session_string(account_name: str, session_string: str) -> None:
     if not isinstance(entry, dict):
         entry = {}
     entry["session_string"] = session_string.strip()
-    entry["updated_at"] = datetime.utcnow().isoformat()
+    entry["updated_at"] = utc_now_iso_z()
     accounts[account_name] = entry
     _save_account_store(data)
 
@@ -169,7 +169,7 @@ def set_account_profile(
         )
         if normalized_channel not in _VALID_NOTIFICATION_CHANNELS:
             raise ValueError(
-                "notification_channel must be one of: global, custom, disabled"
+                "notification_channel 只能是以下之一: global, custom, disabled"
             )
         entry["notification_channel"] = normalized_channel
     if notification_bot_token is not None:
@@ -184,7 +184,7 @@ def set_account_profile(
             if isinstance(notification_chat_id, str)
             else notification_chat_id
         )
-    entry["updated_at"] = datetime.utcnow().isoformat()
+    entry["updated_at"] = utc_now_iso_z()
     accounts[account_name] = entry
     _save_account_store(data)
 

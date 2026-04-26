@@ -190,6 +190,206 @@ select option {
   background: rgba(128, 128, 128, 0.1);
 }
 
+/* 对比度安全的状态色和日志面板，兼容深浅色主题 */
+.status-text-success {
+  color: #6ee7b7;
+}
+
+.status-text-danger {
+  color: #fb7185;
+}
+
+.status-badge-success {
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(52, 211, 153, 0.45);
+}
+
+.status-badge-danger {
+  color: #fecdd3;
+  background: rgba(244, 63, 94, 0.18);
+  border-color: rgba(251, 113, 133, 0.45);
+}
+
+.status-badge-neutral {
+  color: var(--text-sub);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.status-action-success {
+  color: #6ee7b7;
+}
+
+.status-action-success:hover {
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.16);
+}
+
+.status-action-danger {
+  color: #fb7185;
+}
+
+.status-action-danger:hover {
+  color: #fecdd3;
+  background: rgba(244, 63, 94, 0.16);
+}
+
+.ui-muted {
+  color: var(--text-sub);
+}
+
+.ui-dim {
+  color: #b8bac6;
+}
+
+.ui-line-number {
+  color: #8e909b;
+}
+
+.history-tab-inactive {
+  color: #c9cad3;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.history-tab-inactive:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.history-modal-body {
+  background: rgba(5, 5, 7, 0.35);
+}
+
+.history-entry-card {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.history-message-card {
+  background: rgba(0, 0, 0, 0.22);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dashboard-log-message {
+  color: var(--text-main);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.dashboard-log-label {
+  color: var(--text-main);
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/* 小字号可读下限：保留紧凑布局，但避免 9-11px 文案在面板里发虚 */
+.text-\[9px\],
+.text-\[10px\],
+.text-\[11px\],
+.\!text-\[9px\],
+.\!text-\[10px\],
+.\!text-\[11px\] {
+  font-size: 12px !important;
+  line-height: 1.125rem;
+}
+
+.light .status-text-success,
+[data-theme="light"] .status-text-success {
+  color: #047857;
+}
+
+.light .status-text-danger,
+[data-theme="light"] .status-text-danger {
+  color: #be123c;
+}
+
+.light .status-badge-success,
+[data-theme="light"] .status-badge-success {
+  color: #047857;
+  background: #d1fae5;
+  border-color: #6ee7b7;
+}
+
+.light .status-badge-danger,
+[data-theme="light"] .status-badge-danger {
+  color: #be123c;
+  background: #ffe4e6;
+  border-color: #fda4af;
+}
+
+.light .status-badge-neutral,
+[data-theme="light"] .status-badge-neutral {
+  color: #374151;
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.light .status-action-success,
+[data-theme="light"] .status-action-success {
+  color: #047857;
+}
+
+.light .status-action-success:hover,
+[data-theme="light"] .status-action-success:hover {
+  color: #065f46;
+  background: #d1fae5;
+}
+
+.light .status-action-danger,
+[data-theme="light"] .status-action-danger {
+  color: #be123c;
+}
+
+.light .status-action-danger:hover,
+[data-theme="light"] .status-action-danger:hover {
+  color: #9f1239;
+  background: #ffe4e6;
+}
+
+.light .ui-dim,
+[data-theme="light"] .ui-dim {
+  color: #4b5563;
+}
+
+.light .ui-line-number,
+[data-theme="light"] .ui-line-number {
+  color: #6b7280;
+}
+
+.light .history-tab-inactive,
+[data-theme="light"] .history-tab-inactive {
+  color: #374151;
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.light .history-tab-inactive:hover,
+[data-theme="light"] .history-tab-inactive:hover {
+  color: #111827;
+  background: #e5e7eb;
+}
+
+.light .history-modal-body,
+[data-theme="light"] .history-modal-body {
+  background: #f8fafc;
+}
+
+.light .history-entry-card,
+[data-theme="light"] .history-entry-card {
+  background: #ffffff;
+  border-color: #e5e7eb;
+}
+
+.light .history-message-card,
+[data-theme="light"] .history-message-card {
+  background: #f8fafc;
+  border-color: #e5e7eb;
+}
+
 /* 毛玻璃面板 */
 .glass-panel {
   background: var(--glass-bg);
