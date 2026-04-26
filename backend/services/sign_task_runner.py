@@ -43,6 +43,8 @@ class SignTaskJob:
     blocking_phase: Optional[str] = None
     blocking_phase_text: Optional[str] = None
     blocking_last_log: str = ""
+    waiting_account_started_at: Optional[datetime] = None
+    lock_wait_timeout_seconds: float = 120
     submitted_at: datetime = field(default_factory=datetime.now)
     started_at: Optional[datetime] = None
     action_completed_at: Optional[datetime] = None
@@ -51,6 +53,11 @@ class SignTaskJob:
     @property
     def is_active(self) -> bool:
         return self.status in ACTIVE_STATUSES
+
+    def waited_seconds(self) -> float:
+        if self.status != "waiting_account_lock" or not self.waiting_account_started_at:
+            return 0
+        return round((datetime.now() - self.waiting_account_started_at).total_seconds(), 3)
 
     def snapshot(self) -> Dict[str, Any]:
         return {
@@ -74,6 +81,8 @@ class SignTaskJob:
             "blocking_phase": self.blocking_phase,
             "blocking_phase_text": self.blocking_phase_text,
             "blocking_last_log": self.blocking_last_log,
+            "waited_seconds": self.waited_seconds(),
+            "lock_wait_timeout_seconds": self.lock_wait_timeout_seconds,
             "submitted_at": self.submitted_at.isoformat(),
             "started_at": self.started_at.isoformat() if self.started_at else "",
             "action_completed_at": self.action_completed_at.isoformat()
@@ -154,6 +163,7 @@ class SignTaskRunner:
             account_name=account_name,
             task_name=task_name,
             logs=["任务已提交后台执行"],
+            lock_wait_timeout_seconds=self._lock_wait_timeout_seconds,
         )
         self._jobs[job.job_id] = job
         self._latest_by_task[task_key] = job.job_id
@@ -197,6 +207,8 @@ class SignTaskRunner:
                 "blocking_phase": None,
                 "blocking_phase_text": None,
                 "blocking_last_log": "",
+                "waited_seconds": 0,
+                "lock_wait_timeout_seconds": self._lock_wait_timeout_seconds,
                 "submitted_at": "",
                 "started_at": "",
                 "action_completed_at": "",
@@ -301,6 +313,7 @@ class SignTaskRunner:
 
     def _set_blocking_job(self, job: SignTaskJob) -> None:
         blocking = self.get_active_job_for_account(job.account_name)
+        job.waiting_account_started_at = datetime.now()
         job.status = "waiting_account_lock"
         job.status_text = "等待账号空闲"
         job.phase = "waiting_account_lock"
@@ -325,7 +338,8 @@ class SignTaskRunner:
         job.error = "等待账号空闲超时"
         job.message = (
             "等待账号空闲超时，当前任务已取消，不会中断前序任务。"
-            "请查看前序任务实时日志或稍后重试。"
+            f"已等待 {job.waited_seconds():g} 秒，超时阈值 "
+            f"{job.lock_wait_timeout_seconds:g} 秒。请查看前序任务实时日志或稍后重试。"
         )
         job.finished_at = datetime.now()
         job.logs.append(job.message)
@@ -343,6 +357,8 @@ class SignTaskRunner:
                 "phase": job.blocking_phase,
                 "phase_text": job.blocking_phase_text,
                 "last_log": job.blocking_last_log,
+                "waited_seconds": job.waited_seconds(),
+                "lock_wait_timeout_seconds": job.lock_wait_timeout_seconds,
             }
         return {
             "job_id": job.job_id,

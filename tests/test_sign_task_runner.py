@@ -82,6 +82,8 @@ async def test_runner_reports_waiting_account_lock_with_blocking_job():
         assert status["status"] == "waiting_account_lock"
         assert status["blocking_task_name"] == "first"
         assert status["blocking_phase_text"] == "执行任务动作中"
+        assert status["waited_seconds"] >= 0
+        assert status["lock_wait_timeout_seconds"] == 120
         assert "等待账号空闲" in status["message"]
         assert runner.get_active_job_for_account("alice").job_id == first["job_id"]
     finally:
@@ -113,6 +115,7 @@ async def test_runner_fails_waiting_job_after_lock_timeout():
         status = runner.get_status(second["job_id"])
         assert status["status"] == "failed"
         assert "等待账号空闲超时" in status["message"]
+        assert "超时阈值 0.01 秒" in status["message"]
         assert recorded_failures
         assert recorded_failures[0].task_name == "second"
     finally:

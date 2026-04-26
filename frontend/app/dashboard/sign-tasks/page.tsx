@@ -701,6 +701,7 @@ export default function SignTasksPage() {
                                     <div className="font-bold text-amber-200">正在等待账号空闲</div>
                                     <div>前序任务：{runStatus.blocking_task_name || "未知"}</div>
                                     <div>前序阶段：{runStatus.blocking_phase_text || "未知"}</div>
+                                    <div>已等待：{Math.floor(Number(runStatus.waited_seconds || 0))} 秒 / 超时阈值：{Math.floor(Number(runStatus.lock_wait_timeout_seconds || 0))} 秒</div>
                                     <div>最后进度：{runStatus.blocking_last_log || runStatus.last_log || "等待前序任务更新"}</div>
                                 </div>
                             )}

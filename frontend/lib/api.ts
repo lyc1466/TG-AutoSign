@@ -814,6 +814,8 @@ export const getSignTaskStatus = (token: string, name: string, accountName: stri
     blocking_task_name?: string | null;
     blocking_phase_text?: string | null;
     blocking_last_log?: string;
+    waited_seconds?: number;
+    lock_wait_timeout_seconds?: number;
     submitted_at?: string;
     started_at?: string;
     action_completed_at?: string;

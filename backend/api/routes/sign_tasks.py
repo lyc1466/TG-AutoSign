@@ -229,6 +229,8 @@ class TaskStatusResult(BaseModel):
     blocking_phase: Optional[str] = None
     blocking_phase_text: Optional[str] = None
     blocking_last_log: str = ""
+    waited_seconds: float = 0
+    lock_wait_timeout_seconds: float = 0
     submitted_at: str = ""
     started_at: str = ""
     action_completed_at: str = ""
