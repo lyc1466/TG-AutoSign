@@ -44,49 +44,54 @@ export function Toast({ message, type = "info", duration = 4000, onClose }: Toas
         }
     };
 
-    const getColors = () => {
+    const getToneStyles = () => {
         switch (type) {
             case "success":
-                return "from-emerald-500/20 to-cyan-500/20 border-emerald-500/30 text-emerald-300";
+                return {
+                    color: "#047857",
+                    iconBackground: "rgba(16, 185, 129, 0.16)",
+                    borderColor: "rgba(16, 185, 129, 0.55)",
+                };
             case "error":
-                return "from-red-500/20 to-pink-500/20 border-red-500/30 text-red-300";
+                return {
+                    color: "#b91c1c",
+                    iconBackground: "rgba(239, 68, 68, 0.16)",
+                    borderColor: "rgba(239, 68, 68, 0.6)",
+                };
             default:
-                return "from-blue-500/20 to-purple-500/20 border-blue-500/30 text-blue-300";
+                return {
+                    color: "#1d4ed8",
+                    iconBackground: "rgba(59, 130, 246, 0.16)",
+                    borderColor: "rgba(59, 130, 246, 0.55)",
+                };
         }
     };
 
-    const getIconBg = () => {
-        switch (type) {
-            case "success":
-                return "bg-emerald-500/20";
-            case "error":
-                return "bg-red-500/20";
-            default:
-                return "bg-blue-500/20";
-        }
-    };
+    const toneStyles = getToneStyles();
 
     return (
         <div
             className={`
         ${isExiting ? "toast-exit" : "toast-enter"}
         flex items-center gap-3 px-4 py-3 rounded-xl
-        bg-gradient-to-r ${getColors()}
-        backdrop-blur-xl border
-        shadow-lg shadow-black/20
+        border bg-white dark:bg-slate-950
+        shadow-xl shadow-black/20 dark:shadow-black/40
         min-w-[280px] max-w-[400px]
       `}
+            style={{ borderColor: toneStyles.borderColor, color: toneStyles.color }}
         >
-            <div className={`p-2 rounded-lg ${getIconBg()}`}>
+            <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: toneStyles.iconBackground }}>
                 {getIcon()}
             </div>
-            <p className="text-sm font-medium text-[var(--text-main)] flex-1">{message}</p>
+            <p className="text-sm font-semibold flex-1 antialiased" style={{ color: "var(--text-main)" }}>{message}</p>
             <button
+                aria-label="Close toast"
                 onClick={() => {
                     setIsExiting(true);
                     setTimeout(onClose, 300);
                 }}
-                className="p-1 rounded-lg hover:bg-white/10 transition-colors text-white/50 hover:text-white/80"
+                className="p-1 rounded-lg transition-colors hover:bg-slate-900/10 dark:hover:bg-white/10"
+                style={{ color: "#64748b" }}
             >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

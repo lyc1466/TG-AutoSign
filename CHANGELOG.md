@@ -3,6 +3,10 @@
 本文件记录当前维护分支的重要功能、修复、配置、部署与文档变更。
 This file records important feature, fix, configuration, deployment, and documentation changes for the current maintained branch.
 
+## 2026-04-29
+
+- 修复 / Fixed: 提高右下角 Toast 提示在浅色主题下的清晰度，移除模糊背景叠加并增强错误提示图标、正文和关闭按钮对比度 / Improve bottom-right toast readability in the light theme by removing the blurred translucent background layer and increasing contrast for error icons, text, and the close button.
+
 ## 2026-04-28
 
 - 修复 / Fixed: 前端重复点击同一个签到任务时，后台返回“正在执行中 / 请勿重复触发”后改为信息提示，不再误显示为执行失败 / Treat duplicate sign-task submissions that report an already-running task as informational UI feedback instead of a failure toast.
