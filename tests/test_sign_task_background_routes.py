@@ -6,8 +6,20 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
+from fastapi import Response
+
 
 def _load_sign_tasks_routes_module():
+    # Stub heavy/auth dependencies before loading the routes module
+    fake_auth = types.ModuleType("backend.core.auth")
+    fake_auth.get_current_user = lambda: None
+    fake_auth.verify_token = lambda token: None
+    sys.modules["backend.core.auth"] = fake_auth
+
+    fake_db = types.ModuleType("backend.core.database")
+    fake_db.get_db = lambda: None
+    sys.modules["backend.core.database"] = fake_db
+
     fake_sign_task_service = types.ModuleType("backend.services.sign_tasks")
     fake_sign_task_service.get_sign_task_service = lambda: None
     sys.modules["backend.services.sign_tasks"] = fake_sign_task_service
@@ -60,18 +72,20 @@ def test_run_sign_task_submits_background_runner(monkeypatch):
     monkeypatch.setattr(sign_tasks_routes, "get_sign_task_service", lambda: _ServiceStub())
     monkeypatch.setattr(sign_tasks_routes, "get_sign_task_runner", lambda: _RunnerStub())
 
+    response = Response()
     result = asyncio.run(
         sign_tasks_routes.run_sign_task(
             "daily",
             account_name="alice",
+            response=response,
             current_user=SimpleNamespace(username="tester"),
         )
     )
 
-    assert result.status_code == 202
+    assert response.status_code == 202
     assert calls == [("alice", "daily")]
-    assert b'"status":"queued"' in result.body
-    assert "任务已提交后台执行".encode() in result.body
+    assert result["status"] == "queued"
+    assert result["message"] == "任务已提交后台执行"
 
 
 def test_run_sign_task_returns_conflict_for_duplicate(monkeypatch):
@@ -99,16 +113,19 @@ def test_run_sign_task_returns_conflict_for_duplicate(monkeypatch):
     monkeypatch.setattr(sign_tasks_routes, "get_sign_task_service", lambda: _ServiceStub())
     monkeypatch.setattr(sign_tasks_routes, "get_sign_task_runner", lambda: _RunnerStub())
 
+    response = Response()
     result = asyncio.run(
         sign_tasks_routes.run_sign_task(
             "daily",
             account_name="alice",
+            response=response,
             current_user=SimpleNamespace(username="tester"),
         )
     )
 
-    assert result.status_code == 409
-    assert "该任务正在执行中，请勿重复触发".encode() in result.body
+    assert response.status_code == 409
+    assert result["message"] == "该任务正在执行中，请勿重复触发"
+    assert result["accepted"] is False
 
 
 def test_run_status_reads_latest_runner_status(monkeypatch):
