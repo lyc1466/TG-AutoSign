@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 
 interface ToastProps {
     message: string;
@@ -8,6 +9,8 @@ interface ToastProps {
     duration?: number;
     onClose: () => void;
 }
+
+type ToastToneStyles = CSSProperties & Record<`--toast-${string}`, string>;
 
 export function Toast({ message, type = "info", duration = 4000, onClose }: ToastProps) {
     const [isExiting, setIsExiting] = useState(false);
@@ -44,25 +47,34 @@ export function Toast({ message, type = "info", duration = 4000, onClose }: Toas
         }
     };
 
-    const getToneStyles = () => {
+    const getToneStyles = (): ToastToneStyles => {
         switch (type) {
             case "success":
                 return {
-                    color: "#047857",
-                    iconBackground: "rgba(16, 185, 129, 0.16)",
-                    borderColor: "rgba(16, 185, 129, 0.55)",
+                    "--toast-tone": "#047857",
+                    "--toast-tone-dark": "#6ee7b7",
+                    "--toast-icon-bg": "rgba(16, 185, 129, 0.16)",
+                    "--toast-icon-bg-dark": "rgba(52, 211, 153, 0.16)",
+                    "--toast-border": "rgba(16, 185, 129, 0.55)",
+                    "--toast-border-dark": "rgba(52, 211, 153, 0.45)",
                 };
             case "error":
                 return {
-                    color: "#b91c1c",
-                    iconBackground: "rgba(239, 68, 68, 0.16)",
-                    borderColor: "rgba(239, 68, 68, 0.6)",
+                    "--toast-tone": "#b91c1c",
+                    "--toast-tone-dark": "#fca5a5",
+                    "--toast-icon-bg": "rgba(239, 68, 68, 0.16)",
+                    "--toast-icon-bg-dark": "rgba(248, 113, 113, 0.16)",
+                    "--toast-border": "rgba(239, 68, 68, 0.6)",
+                    "--toast-border-dark": "rgba(248, 113, 113, 0.5)",
                 };
             default:
                 return {
-                    color: "#1d4ed8",
-                    iconBackground: "rgba(59, 130, 246, 0.16)",
-                    borderColor: "rgba(59, 130, 246, 0.55)",
+                    "--toast-tone": "#1d4ed8",
+                    "--toast-tone-dark": "#93c5fd",
+                    "--toast-icon-bg": "rgba(59, 130, 246, 0.16)",
+                    "--toast-icon-bg-dark": "rgba(96, 165, 250, 0.16)",
+                    "--toast-border": "rgba(59, 130, 246, 0.55)",
+                    "--toast-border-dark": "rgba(96, 165, 250, 0.45)",
                 };
         }
     };
@@ -74,13 +86,13 @@ export function Toast({ message, type = "info", duration = 4000, onClose }: Toas
             className={`
         ${isExiting ? "toast-exit" : "toast-enter"}
         flex items-center gap-3 px-4 py-3 rounded-xl
-        border bg-white dark:bg-slate-950
-        shadow-xl shadow-black/20 dark:shadow-black/40
+        toast-card border bg-white
+        shadow-xl shadow-black/20
         min-w-[280px] max-w-[400px]
       `}
-            style={{ borderColor: toneStyles.borderColor, color: toneStyles.color }}
+            style={toneStyles}
         >
-            <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: toneStyles.iconBackground }}>
+            <div className="toast-icon p-2 rounded-lg shrink-0">
                 {getIcon()}
             </div>
             <p className="text-sm font-semibold flex-1 antialiased" style={{ color: "var(--text-main)" }}>{message}</p>
@@ -90,8 +102,7 @@ export function Toast({ message, type = "info", duration = 4000, onClose }: Toas
                     setIsExiting(true);
                     setTimeout(onClose, 300);
                 }}
-                className="p-1 rounded-lg transition-colors hover:bg-slate-900/10 dark:hover:bg-white/10"
-                style={{ color: "#64748b" }}
+                className="toast-close p-1 rounded-lg transition-colors"
             >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

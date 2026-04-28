@@ -453,6 +453,47 @@ select option {
   }
 }
 
+.toast-card {
+  border-color: var(--toast-border);
+  color: var(--toast-tone);
+}
+
+.toast-card .toast-icon {
+  background-color: var(--toast-icon-bg);
+}
+
+.toast-card .toast-close {
+  color: #64748b;
+}
+
+.toast-card .toast-close:hover {
+  background-color: rgba(15, 23, 42, 0.1);
+  color: #0f172a;
+}
+
+:root:not([data-theme="light"]) .toast-card,
+[data-theme="dark"] .toast-card {
+  background-color: #020617;
+  border-color: var(--toast-border-dark);
+  color: var(--toast-tone-dark);
+}
+
+:root:not([data-theme="light"]) .toast-card .toast-icon,
+[data-theme="dark"] .toast-card .toast-icon {
+  background-color: var(--toast-icon-bg-dark);
+}
+
+:root:not([data-theme="light"]) .toast-card .toast-close,
+[data-theme="dark"] .toast-card .toast-close {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+:root:not([data-theme="light"]) .toast-card .toast-close:hover,
+[data-theme="dark"] .toast-card .toast-close:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
 /* ================= 2. 主页面 Dashboard ================= */
 .navbar {
   height: 64px;
