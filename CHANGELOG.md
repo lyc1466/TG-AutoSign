@@ -3,9 +3,17 @@
 本文件记录当前维护分支的重要功能、修复、配置、部署与文档变更。
 This file records important feature, fix, configuration, deployment, and documentation changes for the current maintained branch.
 
+## 2026-04-28
+
+- 修复 / Fixed: 前端重复点击同一个签到任务时，后台返回“正在执行中 / 请勿重复触发”后改为信息提示，不再误显示为执行失败 / Treat duplicate sign-task submissions that report an already-running task as informational UI feedback instead of a failure toast.
+- 修复 / Fixed: 签到任务运行监控状态面板不再把仍在运行的重复触发状态渲染为失败样式，并恢复结构化消息事件中“发送消息 / Message sent”的翻译键 / Avoid rendering duplicate-running sign-task monitor states as failures and restore the sent-message translation key for structured message event labels.
+
 ## 2026-04-26
 
-- ?? / Added: ???????????????????????????????????????????????????? 5 ???????????????????????????????????????????????????????????????? / Submit manual sign-task runs to a background runner so the API returns immediately, duplicate same-account task triggers get a Chinese prompt, and a status endpoint supports real-time progress.
+- 新增 / Added: 手动执行签到任务改为后台提交，接口立即返回提交状态，前端通过实时进度和历史链式日志查看完整执行过程 / Submit manual sign tasks to an in-process background runner so the API returns immediately while the UI follows progress through live status and historical flow logs.
+- 新增 / Added: 签到任务后台执行增加中文阶段状态、同账号同任务去重、同账号不同任务排队等待提示，并展示前序任务、前序阶段、最后进度和等待时长 / Add Chinese phase status, duplicate protection for the same account-task pair, queued same-account task hints, and blocking task details including phase, latest progress, and wait duration.
+- 修复 / Fixed: 账号锁等待超时只取消当前等待任务并写入失败历史，不中断前序任务；历史默认保留条数继续使用 `SIGN_TASK_HISTORY_MAX_ENTRIES=100` / Cancel only the waiting job on account-lock timeout, persist failure history without interrupting the blocking job, and keep the default history retention at `SIGN_TASK_HISTORY_MAX_ENTRIES=100`.
+
 - 修复 / Fixed: 统一首页运行日志中“收到 N 条消息”和“最近消息”的字号字重，并移除账号任务历史展开后的重复“最新摘要”行 / Align the dashboard run-log count and latest-message typography, and remove the duplicate latest-summary line from expanded account task history entries.
 - 修复 / Fixed: 优化浅色主题下任务卡片、任务历史、运行监控、首页日志与设置页的成功/失败状态样式，改用主题感知的高对比度状态色和历史面板背景，并为 9-11px 小字号文案增加 12px 可读下限，避免成功徽章、日志文字和说明文字发虚或看不清 / Improve light-theme readability for success/failure states across task cards, task history, run monitoring, dashboard logs, and settings by using theme-aware high-contrast status colors and history panel surfaces, and add a 12px readability floor for 9-11px text.
 

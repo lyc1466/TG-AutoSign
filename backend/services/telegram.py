@@ -10,14 +10,10 @@ import base64
 import logging
 import secrets
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from backend.core.config import get_settings
-from backend.core.logging import (
-    describe_exception,
-    utc_from_timestamp_iso_z,
-    utc_now_iso_z,
-)
 from backend.core.runtime_config import get_telegram_api_runtime_config
 from backend.utils.account_locks import get_account_lock
 from backend.utils.masking import mask_secret
@@ -194,7 +190,7 @@ class TelegramService:
         """
         from tg_signer.core import get_client
 
-        checked_at = utc_now_iso_z()
+        checked_at = datetime.utcnow().isoformat() + "Z"
 
         if not self.account_exists(account_name):
             return {
@@ -396,11 +392,7 @@ class TelegramService:
         try:
             await close_client_by_name(account_name, workdir=self.session_dir)
         except Exception as e:
-            logger.warning(
-                "关闭账号客户端失败: 账号=%s, 错误=%s",
-                account_name,
-                describe_exception(e),
-            )
+            logger.debug("关闭账号客户端失败: account=%s, error=%s", account_name, e)
 
         session_file = self.session_dir / f"{account_name}.session"
         journal_file = self.session_dir / f"{account_name}.session-journal"
@@ -523,11 +515,7 @@ class TelegramService:
         try:
             await close_client_by_name(account_name, workdir=self.session_dir)
         except Exception as e:
-            logger.warning(
-                "开始登录前清理后台客户端失败: 账号=%s, 错误=%s",
-                account_name,
-                describe_exception(e),
-            )
+            print(f"DEBUG: start_login 清理后台客户端失败: {e}")
 
         # 3. 强制垃圾回收，释放可能的未关闭文件句柄 (Windows 特性)
         gc.collect()
@@ -561,11 +549,7 @@ class TelegramService:
                             aux_file.unlink()
                 except OSError as e:
                     # 如果删除失败，说明真的被锁得很死，或者权限问题
-                    logger.warning(
-                        "删除旧 Session 文件失败，可能仍被占用: 账号=%s, 错误=%s",
-                        account_name,
-                        describe_exception(e),
-                    )
+                    print(f"DEBUG: 删除旧 Session 文件失败: {e} - 可能文件仍被占用")
                     # 这里不抛出异常，尝试继续，也许 Pyrogram 能处理?
                     # 但通常 "unable to open database file" 就是因为这个。
                     pass
@@ -641,12 +625,9 @@ class TelegramService:
             _release_account_lock()
             raise ValueError(f"请求过于频繁，请等待 {e.value} 秒后重试")
         except Exception as e:
-            logger.exception(
-                "发送登录验证码失败: 账号=%s, 手机号=%s, 错误=%s",
-                account_name,
-                phone_number,
-                describe_exception(e),
-            )
+            import traceback
+
+            traceback.print_exc()
             try:
                 await client.disconnect()
             except Exception:
@@ -716,7 +697,7 @@ class TelegramService:
                 return
             session_string = await client.export_session_string()
             if not session_string:
-                raise ValueError("导出会话字符串失败")
+                raise ValueError("导出 session_string 失败")
             set_account_session_string(account_name, session_string)
             save_session_string_file(self.session_dir, account_name, session_string)
             self._accounts_cache = None
@@ -764,7 +745,7 @@ class TelegramService:
                     # 需要 2FA 密码
                     if not password:
                         # 不断开连接，等待用户输入 2FA 密码
-                        raise ValueError("此账号启用了两步验证，请输入两步验证密码")
+                        raise ValueError("此账号启用了两步验证，请输入 2FA 密码")
 
                     # 使用 2FA 密码登录
                     try:
@@ -785,7 +766,7 @@ class TelegramService:
                             "username": me.username,
                         }
                     except PasswordHashInvalid:
-                        raise ValueError("两步验证密码错误")
+                        raise ValueError("2FA 密码错误")
 
         except PhoneCodeInvalid:
             # 清理 session
@@ -831,7 +812,7 @@ class TelegramService:
             elif "PHONE_CODE_EXPIRED" in error_msg:
                 raise ValueError("验证码已过期，请重新获取")
             elif "SESSION_PASSWORD_NEEDED" in error_msg:
-                raise ValueError("此账号启用了两步验证，请输入两步验证密码")
+                raise ValueError("此账号启用了两步验证，请输入 2FA 密码")
             else:
                 raise ValueError(f"登录失败: {error_msg}")
 
@@ -842,7 +823,7 @@ class TelegramService:
         if session_mode == "string":
             session_string = await client.export_session_string()
             if not session_string:
-                raise ValueError("导出会话字符串失败")
+                raise ValueError("导出 session_string 失败")
             set_account_session_string(account_name, session_string)
             save_session_string_file(self.session_dir, account_name, session_string)
         else:
@@ -873,7 +854,7 @@ class TelegramService:
             if last_state == state:
                 return
             data["last_state_logged"] = state
-        logger.info("扫码登录状态更新: 登录 ID=%s, 状态=%s", login_id, state)
+        logger.info("qr_login state=%s login_id=%s", state, login_id)
 
     async def _apply_migrate_auth(self, client, data: Dict[str, Any]) -> None:
         migrate_dc_id = data.get("migrate_dc_id")
@@ -947,7 +928,7 @@ class TelegramService:
         current = int(data.get("expires_ts") or 0)
         if current < min_expires:
             data["expires_ts"] = min_expires
-            data["expires_at"] = utc_from_timestamp_iso_z(min_expires)
+            data["expires_at"] = datetime.utcfromtimestamp(min_expires).isoformat() + "Z"
 
     async def _expire_qr_login(self, login_id: str, expires_ts: int) -> None:
         while True:
@@ -1064,11 +1045,11 @@ class TelegramService:
 
             token_bytes = getattr(result, "token", None)
             if not token_bytes:
-                raise ValueError("获取二维码令牌失败")
+                raise ValueError("获取二维码 token 失败")
 
             token_expires = getattr(result, "expires", None)
             expires_ts = self._normalize_login_token_expires(token_expires)
-            expires_at = utc_from_timestamp_iso_z(expires_ts)
+            expires_at = datetime.utcfromtimestamp(expires_ts).isoformat() + "Z"
             qr_uri = "tg://login?token=" + base64.urlsafe_b64encode(
                 token_bytes
             ).decode("utf-8")
@@ -1118,7 +1099,9 @@ class TelegramService:
                             data["expires_ts"] = self._normalize_login_token_expires(
                                 token_expires
                             )
-                            data["expires_at"] = utc_from_timestamp_iso_z(data["expires_ts"])
+                            data["expires_at"] = datetime.utcfromtimestamp(
+                                data["expires_ts"]
+                            ).isoformat() + "Z"
                         data["scan_seen"] = True
                         data["status"] = "scanned_wait_confirm"
                         self._log_qr_state(login_id, "scanned_wait_confirm", data)
@@ -1333,7 +1316,9 @@ class TelegramService:
                         data["expires_ts"] = self._normalize_login_token_expires(
                             token_expires
                         )
-                        data["expires_at"] = utc_from_timestamp_iso_z(data["expires_ts"])
+                        data["expires_at"] = datetime.utcfromtimestamp(
+                            data["expires_ts"]
+                        ).isoformat() + "Z"
                     if result.token:
                         data["token"] = result.token
                     data["status"] = "scanned_wait_confirm"
@@ -1393,7 +1378,9 @@ class TelegramService:
                                         data["expires_ts"] = self._normalize_login_token_expires(
                                             token_expires
                                         )
-                                        data["expires_at"] = utc_from_timestamp_iso_z(data["expires_ts"])
+                                        data["expires_at"] = datetime.utcfromtimestamp(
+                                            data["expires_ts"]
+                                        ).isoformat() + "Z"
                                     if export_result.token:
                                         data["token"] = export_result.token
                                     data["status"] = "scanned_wait_confirm"
@@ -1459,7 +1446,7 @@ class TelegramService:
 
         password = (password or "").strip()
         if not password:
-            raise ValueError("两步验证密码不能为空")
+            raise ValueError("2FA 密码不能为空")
 
         data = _qr_login_sessions.get(login_id)
         if not data:
@@ -1601,7 +1588,9 @@ class TelegramService:
                             data["expires_ts"] = self._normalize_login_token_expires(
                                 token_expires
                             )
-                            data["expires_at"] = utc_from_timestamp_iso_z(data["expires_ts"])
+                            data["expires_at"] = datetime.utcfromtimestamp(
+                                data["expires_ts"]
+                            ).isoformat() + "Z"
                         if result.token:
                             data["token"] = result.token
 
@@ -1678,7 +1667,9 @@ class TelegramService:
                                     data["expires_ts"] = (
                                         self._normalize_login_token_expires(token_expires)
                                     )
-                                    data["expires_at"] = utc_from_timestamp_iso_z(data["expires_ts"])
+                                    data["expires_at"] = datetime.utcfromtimestamp(
+                                        data["expires_ts"]
+                                    ).isoformat() + "Z"
                                 if export_result.token:
                                     data["token"] = export_result.token
                         except Exception:
@@ -1734,7 +1725,9 @@ class TelegramService:
                         data["expires_ts"] = self._normalize_login_token_expires(
                             token_expires
                         )
-                        data["expires_at"] = utc_from_timestamp_iso_z(data["expires_ts"])
+                        data["expires_at"] = datetime.utcfromtimestamp(
+                            data["expires_ts"]
+                        ).isoformat() + "Z"
                     if data.get("token") != result.token:
                         data["token"] = result.token
                     raise ValueError("请先在手机端确认登录")
@@ -1854,7 +1847,7 @@ class TelegramService:
             else:
                 # 验证登录
                 if not phone_code_hash:
-                    raise ValueError("缺少验证码校验标识（phone_code_hash）")
+                    raise ValueError("缺少 phone_code_hash")
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -1873,9 +1866,9 @@ class TelegramService:
                     loop.close()
 
             return result
-        except Exception as e:
+        except Exception:
             # 重新抛出异常，保留原始错误信息
-            raise e
+            raise
 
 
 # 创建全局实例

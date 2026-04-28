@@ -174,6 +174,24 @@ def readable_chat(chat: Chat):
     )
 
 
+def readable_action(action: ActionT) -> str:
+    if isinstance(action, SendTextAction):
+        return f"发送文本：{action.text}"
+    if isinstance(action, SendDiceAction):
+        return f"发送 Dice 表情：{action.dice}"
+    if isinstance(action, ClickKeyboardByTextAction):
+        return f"点击文字按钮：{action.text}"
+    if isinstance(action, ChooseOptionByImageAction):
+        return "识别图片并选择选项"
+    if isinstance(action, ReplyByCalculationProblemAction):
+        return "识别并回复计算题"
+    if isinstance(action, ReplyByImageRecognitionAction):
+        return "识别图片并回复文本"
+    if isinstance(action, ClickButtonByCalculationProblemAction):
+        return "计算答案并点击按钮"
+    return "执行签到动作"
+
+
 _CLIENT_INSTANCES: dict[str, "Client"] = {}
 
 # reference counts and async locks for shared client lifecycle management
@@ -1454,9 +1472,9 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
                 ) from e
         self.log(f"开始执行: \n{chat}")
         for action in chat.actions:
-            self.log(f"等待处理动作: {action}")
+            self.log(f"等待处理动作: {readable_action(action)}")
             await self.wait_for(chat, action)
-            self.log(f"处理完成: {action}")
+            self.log(f"处理完成: {readable_action(action)}")
             self.context.waiting_message = None
             await asyncio.sleep(chat.action_interval / 1000)
 
@@ -1506,7 +1524,7 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
 
         async def sign_once():
             success_count = 0
-            for chat in config.chats:
+            for index, chat in enumerate(config.chats):
                 self.context.sign_chats[chat.chat_id].append(chat)
                 try:
                     await self.sign_a_chat(chat)
@@ -1517,7 +1535,8 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
                     continue
 
                 self.context.chat_messages[chat.chat_id].clear()
-                await asyncio.sleep(config.sign_interval)
+                if index < len(config.chats) - 1:
+                    await asyncio.sleep(config.sign_interval)
 
             if success_count == 0 and len(config.chats) > 0:
                 raise RuntimeError("所有会话均执行失败（详细请看运行日志）")
@@ -1819,6 +1838,7 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
                     if message is None:
                         continue
                     self.context.waiting_message = message
+                    self.log("已收到机器人回复，正在处理")
                     try:
                         ok = False
                         if isinstance(action, ClickKeyboardByTextAction):
@@ -1832,7 +1852,6 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
                         elif isinstance(action, ClickButtonByCalculationProblemAction):
                             ok = await self._click_button_by_calculation_problem(action, message)
                         if ok:
-                            self.log("已收到机器人回复，正在处理")
                             # 将消息ID对应value置为None，保证收到消息的编辑时消息所处的顺序
                             self.context.chat_messages[chat.chat_id][message.id] = None
                             return None

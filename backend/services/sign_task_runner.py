@@ -55,9 +55,10 @@ class SignTaskJob:
         return self.status in ACTIVE_STATUSES
 
     def waited_seconds(self) -> float:
-        if self.status != "waiting_account_lock" or not self.waiting_account_started_at:
+        if not self.waiting_account_started_at:
             return 0
-        return round((datetime.now() - self.waiting_account_started_at).total_seconds(), 3)
+        wait_ended_at = self.finished_at or datetime.now()
+        return round((wait_ended_at - self.waiting_account_started_at).total_seconds(), 3)
 
     def snapshot(self) -> Dict[str, Any]:
         return {
@@ -91,6 +92,9 @@ class SignTaskJob:
             "finished_at": self.finished_at.isoformat() if self.finished_at else "",
             "is_running": self.is_active,
         }
+
+    def to_dict(self) -> Dict[str, Any]:
+        return self.snapshot()
 
 
 class SignTaskRunner:
@@ -130,9 +134,15 @@ class SignTaskRunner:
     async def stop(self) -> None:
         if not self._started:
             return
-        for _ in self._workers:
-            await self._queue.put(None)
+        for worker in self._workers:
+            worker.cancel()
         await asyncio.gather(*self._workers, return_exceptions=True)
+        self._cancel_queued_jobs()
+        for job in self._jobs.values():
+            if job.is_active:
+                self._mark_cancelled(job)
+        self._active_by_account.clear()
+        self._active_by_task.clear()
         self._workers.clear()
         self._started = False
 
@@ -158,6 +168,8 @@ class SignTaskRunner:
                 "error": "该任务正在执行中，请勿重复触发",
             }
 
+        blocking_job = self._get_account_blocking_job(account_name)
+
         job = SignTaskJob(
             job_id=uuid4().hex,
             account_name=account_name,
@@ -165,6 +177,14 @@ class SignTaskRunner:
             logs=["任务已提交后台执行"],
             lock_wait_timeout_seconds=self._lock_wait_timeout_seconds,
         )
+        if blocking_job:
+            job.blocking_job_id = blocking_job.job_id
+            job.blocking_task_name = blocking_job.task_name
+            job.blocking_phase = blocking_job.phase
+            job.blocking_phase_text = blocking_job.phase_text
+            job.blocking_last_log = blocking_job.logs[-1] if blocking_job.logs else ""
+            job.message = f"任务已提交，正在等待账号空闲。前序任务：{blocking_job.task_name}"
+            job.logs = [job.message]
         self._jobs[job.job_id] = job
         self._latest_by_task[task_key] = job.job_id
         self._active_by_task[task_key] = job.job_id
@@ -192,10 +212,10 @@ class SignTaskRunner:
                 "task_name": task_name,
                 "accepted": False,
                 "status": "idle",
-                "status_text": "空闲",
+                "status_text": "未运行",
                 "phase": "idle",
-                "phase_text": "空闲",
-                "message": "当前没有后台执行任务",
+                "phase_text": "未运行",
+                "message": "当前任务未运行",
                 "success": None,
                 "error": "",
                 "output": "",
@@ -223,14 +243,44 @@ class SignTaskRunner:
         job = self._jobs.get(self._active_by_task.get((account_name, task_name), ""))
         return job if job and job.is_active else None
 
-    def get_active_job_for_account(self, account_name: str) -> Optional[SignTaskJob]:
+    def get_active_job_for_account(
+        self, account_name: str, *, account_locked_only: bool = False
+    ) -> Optional[SignTaskJob]:
         job = self._jobs.get(self._active_by_account.get(account_name, ""))
-        return job if job and job.is_active else None
+        if job and job.is_active:
+            return job
+        if account_locked_only:
+            return None
+        return next(
+            (
+                job
+                for job in self._jobs.values()
+                if job.account_name == account_name and job.is_active
+            ),
+            None,
+        )
+
+    def _get_account_blocking_job(self, account_name: str) -> Optional[SignTaskJob]:
+        locked_job = self.get_active_job_for_account(
+            account_name, account_locked_only=True
+        )
+        if locked_job:
+            return locked_job
+        return next(
+            (
+                job
+                for job in self._jobs.values()
+                if job.account_name == account_name
+                and job.is_active
+                and job.phase not in {"action_completed", "cleanup"}
+            ),
+            None,
+        )
 
     async def wait_for_idle(self) -> None:
         await self._queue.join()
         while any(job.is_active for job in self._jobs.values()):
-            await asyncio.sleep(0)
+            await asyncio.sleep(0.05)
 
     async def _worker_loop(self) -> None:
         while True:
@@ -252,16 +302,25 @@ class SignTaskRunner:
             self._fail_waiting_job(job)
             return
 
+        account_lock_held = True
         self._active_by_account[job.account_name] = job.job_id
+
+        async def report(phase: str, phase_text: str, message: str) -> None:
+            nonlocal account_lock_held
+            await self._report(job, phase, phase_text, message)
+            if phase == "action_completed" and account_lock_held:
+                account_lock_held = False
+                if self._active_by_account.get(job.account_name) == job.job_id:
+                    self._active_by_account.pop(job.account_name, None)
+                lock.release()
+
         try:
-            await self._report(job, "preparing", "准备执行", "已获取账号执行锁，开始准备运行环境")
+            await report("preparing", "准备执行", "已获取账号执行锁，开始准备运行环境")
             result = await self._run_task(
                 job.account_name,
                 job.task_name,
                 lock_wait_timeout_seconds=self._lock_wait_timeout_seconds,
-                progress_callback=lambda phase, phase_text, message: self._report(
-                    job, phase, phase_text, message
-                ),
+                progress_callback=report,
                 run_metadata=self._history_metadata(job),
             )
             success = bool(result.get("success"))
@@ -279,6 +338,9 @@ class SignTaskRunner:
                 job.phase_text = "执行失败"
                 job.message = job.error or "任务执行失败"
                 job.logs.append(job.message)
+        except asyncio.CancelledError:
+            self._mark_cancelled(job)
+            raise
         except Exception as exc:
             job.success = False
             job.error = f"{type(exc).__name__}: {exc}"
@@ -294,7 +356,32 @@ class SignTaskRunner:
                 self._active_by_account.pop(job.account_name, None)
             if self._active_by_task.get((job.account_name, job.task_name)) == job.job_id:
                 self._active_by_task.pop((job.account_name, job.task_name), None)
-            lock.release()
+            if account_lock_held:
+                lock.release()
+
+    def _cancel_queued_jobs(self) -> None:
+        while True:
+            try:
+                queued_job = self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+            try:
+                if queued_job is not None and queued_job.is_active:
+                    self._mark_cancelled(queued_job)
+            finally:
+                self._queue.task_done()
+
+    def _mark_cancelled(self, job: SignTaskJob) -> None:
+        job.success = False
+        job.status = "cancelled"
+        job.status_text = "已取消"
+        job.phase = "cancelled"
+        job.phase_text = "已取消"
+        job.error = "任务已取消"
+        job.message = "任务已取消"
+        job.finished_at = datetime.now()
+        if not job.logs or job.logs[-1] != job.message:
+            job.logs.append(job.message)
 
     async def _report(
         self, job: SignTaskJob, phase: str, phase_text: str, message: str
@@ -312,7 +399,7 @@ class SignTaskRunner:
         job.logs.append(message)
 
     def _set_blocking_job(self, job: SignTaskJob) -> None:
-        blocking = self.get_active_job_for_account(job.account_name)
+        blocking = self._get_account_blocking_job(job.account_name)
         job.waiting_account_started_at = datetime.now()
         job.status = "waiting_account_lock"
         job.status_text = "等待账号空闲"
@@ -330,6 +417,7 @@ class SignTaskRunner:
         job.logs.append(job.message)
 
     def _fail_waiting_job(self, job: SignTaskJob) -> None:
+        job.finished_at = datetime.now()
         job.status = "failed"
         job.status_text = "执行失败"
         job.phase = "failed"
@@ -338,10 +426,10 @@ class SignTaskRunner:
         job.error = "等待账号空闲超时"
         job.message = (
             "等待账号空闲超时，当前任务已取消，不会中断前序任务。"
+            "前序任务仍未完成，可能卡住。"
             f"已等待 {job.waited_seconds():g} 秒，超时阈值 "
             f"{job.lock_wait_timeout_seconds:g} 秒。请查看前序任务实时日志或稍后重试。"
         )
-        job.finished_at = datetime.now()
         job.logs.append(job.message)
         if self._failure_recorder:
             self._failure_recorder(job)

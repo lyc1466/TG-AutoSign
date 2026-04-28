@@ -97,6 +97,9 @@ media/
 logs/
 data/
 data_test/
+docker-data/
+docker/data/
+docker-test-data/
 
 # Editors & IDEs
 *.sublime-project
@@ -116,6 +119,9 @@ data_test/
 # custom
 _test*.py
 _test*.json
+docker-compose.test.yml
+plan/
+tests/
 
 # pyrogram
 *.session
@@ -136,6 +142,9 @@ git_show_head*.txt
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+frontend/test-results/
+frontend/playwright-report/
+frontend/tmp-e2e/
+frontend/tmp-playwright-ui/
 frontend/tsconfig.tsbuildinfo
 frontend/.env.local
-

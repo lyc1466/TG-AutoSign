@@ -122,7 +122,7 @@ def get_sign_task_runtime_config() -> SignTaskRuntimeConfig:
         ),
         force_in_memory=_read_bool_env("SIGN_TASK_FORCE_IN_MEMORY"),
         history_max_entries=_read_positive_int_env(
-            "SIGN_TASK_HISTORY_MAX_ENTRIES", 100, 10
+            "SIGN_TASK_HISTORY_MAX_ENTRIES", 100, 5
         ),
         history_max_flow_lines=_read_positive_int_env(
             "SIGN_TASK_HISTORY_MAX_FLOW_LINES", 200, 20

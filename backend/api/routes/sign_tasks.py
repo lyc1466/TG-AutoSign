@@ -14,6 +14,7 @@ from fastapi import (
     Depends,
     HTTPException,
     Query,
+    Response,
     WebSocket,
     WebSocketDisconnect,
     status,
@@ -181,6 +182,28 @@ class RunTaskResult(BaseModel):
     status_text: str = ""
     phase: str = ""
     phase_text: str = ""
+
+
+class RunTaskSubmission(BaseModel):
+    """签到任务后台提交结果"""
+
+    accepted: bool
+    job_id: str
+    status: str
+    status_text: str
+    phase: str
+    phase_text: str
+    message: str
+    account_name: str
+    task_name: str
+    blocking_job_id: Optional[str] = None
+    blocking_task_name: Optional[str] = None
+    blocking_phase_text: Optional[str] = None
+    blocking_last_log: str = ""
+    lock_wait_timeout_seconds: float
+    success: Optional[bool] = None
+    output: str = ""
+    error: str = ""
 
 
 class MessageSenderInfo(BaseModel):
@@ -410,10 +433,11 @@ async def delete_sign_task(
     return {"ok": True}
 
 
-@router.post("/{task_name}/run", response_model=RunTaskResult)
+@router.post("/{task_name}/run", response_model=RunTaskSubmission)
 async def run_sign_task(
     task_name: str,
     account_name: str,
+    response: Response,
     current_user=Depends(get_current_user),
 ):
     """手动运行签到任务"""
@@ -428,7 +452,8 @@ async def run_sign_task(
         if submission.get("accepted")
         else status.HTTP_409_CONFLICT
     )
-    return JSONResponse(status_code=response_status, content=submission)
+    response.status_code = response_status
+    return submission
 
 
 @router.get("/{task_name}/run-status", response_model=TaskStatusResult)
@@ -559,7 +584,6 @@ async def sign_task_logs_ws(
 
     last_idx = 0
     last_event_sequence = 0
-    observed_activity = False
     try:
         while True:
             sign_task_service = get_sign_task_service()
@@ -587,7 +611,6 @@ async def sign_task_logs_ws(
 
             # 如果有新内容，则推送
             if len(active_logs) > last_idx:
-                observed_activity = True
                 new_logs = active_logs[last_idx:]
                 await websocket.send_json(
                     {
@@ -601,7 +624,6 @@ async def sign_task_logs_ws(
                 last_idx = len(active_logs)
 
             if new_message_events:
-                observed_activity = True
                 await websocket.send_json(
                     {
                         "type": "message_events",
@@ -617,8 +639,6 @@ async def sign_task_logs_ws(
 
             # 如果任务已结束且日志已推完
             if (
-                observed_activity
-                and
                 not sign_task_service.is_task_running(task_name, account_name=account_name)
                 and last_idx >= len(active_logs)
                 and last_event_sequence >= latest_event_sequence

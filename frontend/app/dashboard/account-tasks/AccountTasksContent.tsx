@@ -60,6 +60,11 @@ const DICE_OPTIONS = [
     "\uD83C\uDFB0",
 ] as const;
 
+const isDuplicateRunMessage = (message?: string) => {
+    const text = String(message || "");
+    return text.includes("运行中") || text.includes("执行中") || text.includes("重复触发");
+};
+
 // Memoized Task Item Component
 const TaskItem = memo(({ task, loading, isRunning, onEdit, onRun, onViewLogs, onCopy, onDelete, t, language }: {
     task: SignTask;
@@ -612,17 +617,23 @@ export default function AccountTasksContent() {
             setRunningTaskName(taskName);
             const result = await runSignTask(token, taskName, accountName);
 
-            if (result.success) {
-                addToastRef.current(tRef.current("task_run_success").replace("{name}", taskName), "success");
-            } else {
-                if (result.error && result.error.includes("运行中")) {
-                    addToastRef.current(tRef.current("task_running_wait") || (language === "zh" ? "该任务正在运行中，任务结束后才能再次执行" : "Task is currently running, please wait until it finishes."), "info");
+            if (result.accepted === false || result.status === "failed") {
+                const duplicateMessage = result.message || result.error || "";
+                if (isDuplicateRunMessage(duplicateMessage)) {
+                    addToastRef.current(duplicateMessage || tRef.current("task_running_wait") || (language === "zh" ? "该任务正在执行中，请勿重复触发" : "Task is currently running, please wait until it finishes."), "info");
                 } else {
                     addToastRef.current(result.error || tRef.current("task_run_failed"), "error");
                 }
+            } else {
+                addToastRef.current(result.message || (language === "zh" ? "任务已提交后台执行" : "Task submitted to run in the background"), "success");
             }
         } catch (err: any) {
-            addToastRef.current(formatErrorMessage("task_run_failed", err), "error");
+            if (err?.status === 409) {
+                const duplicateMessage = err?.data?.message || err?.data?.error || err.message;
+                addToastRef.current(duplicateMessage || (language === "zh" ? "该任务正在执行中，请勿重复触发" : "Task is already running."), "info");
+            } else {
+                addToastRef.current(formatErrorMessage("task_run_failed", err), "error");
+            }
         } finally {
             setLoading(false);
             setRunningTaskName(null);

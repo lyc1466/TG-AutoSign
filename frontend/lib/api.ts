@@ -41,8 +41,9 @@ async function request<T>(
     // 尝试解析 JSON 错误响应
     let errorMessage = "请求失败";
     let errorCode: string | undefined;
+    let errorData: any;
     try {
-      const errorData = await res.json();
+      errorData = await res.json();
       if (errorData && typeof errorData === "object") {
         errorMessage = errorData.detail || errorData.message || JSON.stringify(errorData);
         errorCode = errorData.code;
@@ -72,6 +73,9 @@ async function request<T>(
 
     const err: any = new Error(errorMessage);
     err.status = res.status;
+    if (errorData !== undefined) {
+      err.data = errorData;
+    }
     if (errorCode) {
       err.code = errorCode;
     }
@@ -606,7 +610,6 @@ export interface AccountLog {
   summary?: string;
   bot_message?: string;
   latest_message?: string;
-  message_count?: number;
   success: boolean;
   created_at: string;
 }
@@ -676,6 +679,48 @@ export interface SignTaskMessageEvent {
   text?: string;
   caption?: string;
   summary?: string;
+}
+
+export interface SignTaskRunResult {
+  accepted: boolean;
+  job_id?: string;
+  status: string;
+  status_text?: string;
+  phase?: string;
+  phase_text?: string;
+  message?: string;
+  account_name?: string;
+  task_name?: string;
+  blocking_job_id?: string | null;
+  blocking_task_name?: string | null;
+  blocking_phase?: string | null;
+  blocking_phase_text?: string | null;
+  blocking_last_log?: string;
+  lock_wait_timeout_seconds?: number;
+  success?: boolean | null;
+  output?: string;
+  error?: string;
+  logs?: string[];
+  message_events?: SignTaskMessageEvent[];
+  last_log?: string;
+  waited_seconds?: number;
+  is_running?: boolean;
+  submitted_at?: string;
+  started_at?: string;
+  action_completed_at?: string;
+  finished_at?: string;
+}
+
+export interface SignTaskStatus extends SignTaskRunResult {
+  is_running: boolean;
+  logs?: string[];
+  message_events?: SignTaskMessageEvent[];
+  last_log?: string;
+  waited_seconds?: number;
+  submitted_at?: string;
+  started_at?: string;
+  action_completed_at?: string;
+  finished_at?: string;
 }
 
 export type SignTaskMonitorStreamEvent =
@@ -779,48 +824,12 @@ export const deleteSignTask = (token: string, name: string, accountName?: string
   }, token);
 
 export const runSignTask = (token: string, name: string, accountName: string) =>
-  request<{
-    accepted: boolean;
-    success: boolean;
-    job_id: string;
-    output: string;
-    error: string;
-    status: string;
-    status_text?: string;
-    phase?: string;
-    phase_text?: string;
-    message?: string;
-  }>(`/sign-tasks/${name}/run?account_name=${accountName}`, {
+  request<SignTaskRunResult>(`/sign-tasks/${name}/run?account_name=${accountName}`, {
     method: "POST",
   }, token);
 
 export const getSignTaskStatus = (token: string, name: string, accountName: string) =>
-  request<{
-    job_id: string;
-    accepted: boolean;
-    account_name: string;
-    task_name: string;
-    status: string;
-    status_text: string;
-    phase: string;
-    phase_text: string;
-    is_running: boolean;
-    message?: string;
-    success?: boolean | null;
-    error?: string;
-    logs: string[];
-    message_events: SignTaskMessageEvent[];
-    last_log?: string;
-    blocking_task_name?: string | null;
-    blocking_phase_text?: string | null;
-    blocking_last_log?: string;
-    waited_seconds?: number;
-    lock_wait_timeout_seconds?: number;
-    submitted_at?: string;
-    started_at?: string;
-    action_completed_at?: string;
-    finished_at?: string;
-  }>(`/sign-tasks/${name}/run-status?account_name=${accountName}`, {}, token);
+  request<SignTaskStatus>(`/sign-tasks/${name}/run-status?account_name=${accountName}`, {}, token);
 
 export const getSignTaskMonitorWebSocketUrl = (
   token: string,
@@ -875,6 +884,16 @@ export interface SignTaskHistoryItem {
   time: string;
   success: boolean;
   message?: string;
+  job_id?: string;
+  task_name?: string;
+  account_name?: string;
+  status?: string;
+  status_text?: string;
+  started_at?: string;
+  action_completed_at?: string;
+  finished_at?: string;
+  duration_seconds?: number | null;
+  blocking_info?: Record<string, any> | null;
   flow_logs?: string[];
   flow_truncated?: boolean;
   flow_line_count?: number;

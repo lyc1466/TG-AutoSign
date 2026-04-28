@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { getToken } from "../../../../lib/auth";
 import {
@@ -36,6 +36,7 @@ export default function CreateSignTaskPage() {
     const { toasts, addToast, removeToast } = useToast();
     const [token, setLocalToken] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const loadedAccountsTokenRef = useRef<string | null>(null);
 
     // 表单数据
     const [taskName, setTaskName] = useState("");
@@ -130,6 +131,8 @@ export default function CreateSignTaskPage() {
             return;
         }
         setLocalToken(tokenStr);
+        if (loadedAccountsTokenRef.current === tokenStr) return;
+        loadedAccountsTokenRef.current = tokenStr;
         loadAccounts(tokenStr);
     }, [router, loadAccounts]);
 

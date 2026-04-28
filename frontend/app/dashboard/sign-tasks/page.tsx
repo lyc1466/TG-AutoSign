@@ -16,6 +16,8 @@ import {
     SignTaskHistoryItem,
     SignTaskMessageEvent,
     SignTaskMonitorStreamEvent,
+    SignTaskRunResult,
+    SignTaskStatus,
     AccountInfo,
 } from "../../../lib/api";
 import {
@@ -52,6 +54,11 @@ const getMessageEventKey = (event: SignTaskMessageEvent) => {
         return `${parts[1]}:${parts[2]}`;
     }
     return eventId;
+};
+
+const isDuplicateRunMessage = (message?: string) => {
+    const text = String(message || "");
+    return text.includes("运行中") || text.includes("执行中") || text.includes("重复触发");
 };
 
 const getIncomingMessageSummaries = (events: SignTaskMessageEvent[]) => {
@@ -115,15 +122,15 @@ export default function SignTasksPage() {
     const [runLogs, setRunLogs] = useState<string[]>([]);
     const [runMessages, setRunMessages] = useState<SignTaskMessageEvent[]>([]);
     const [runMonitorTab, setRunMonitorTab] = useState<"logs" | "messages">("logs");
-    const [runResult, setRunResult] = useState<{ accepted?: boolean; success: boolean; output: string; error: string; status?: string; status_text?: string; phase?: string; phase_text?: string; message?: string } | null>(null);
-    const [runStatus, setRunStatus] = useState<any | null>(null);
+    const [runResult, setRunResult] = useState<SignTaskRunResult | null>(null);
+    const [runStatus, setRunStatus] = useState<SignTaskStatus | SignTaskRunResult | null>(null);
     const [isDone, setIsDone] = useState(false);
     const [historyTask, setHistoryTask] = useState<SignTask | null>(null);
     const [historyLogs, setHistoryLogs] = useState<SignTaskHistoryItem[]>([]);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyTab, setHistoryTab] = useState<"messages" | "logs">("messages");
     const runSocketRef = useRef<WebSocket | null>(null);
-    const runResultRef = useRef<{ accepted?: boolean; success: boolean; output: string; error: string; status?: string; status_text?: string; phase?: string; phase_text?: string; message?: string } | null>(null);
+    const runResultRef = useRef<SignTaskRunResult | null>(null);
 
     const addToastRef = useRef(addToast);
     const tRef = useRef(t);
@@ -269,9 +276,10 @@ export default function SignTasksPage() {
             setRunStatus(result);
             runResultRef.current = result;
 
-            if (!result.success) {
-                if (result.error && result.error.includes("运行中")) {
-                    addToast(language === "zh" ? "该任务正在运行中，无法重复开始。正在为您展示其实时进度..." : "Task is currently running. Real-time logs are shown below.", "info");
+            if (result.accepted === false || result.status === "failed") {
+                const duplicateMessage = result.message || result.error || "";
+                if (isDuplicateRunMessage(duplicateMessage)) {
+                    addToast(duplicateMessage || (language === "zh" ? "该任务正在执行中，请勿重复触发。正在为您展示其实时进度..." : "Task is currently running. Real-time logs are shown below."), "info");
                 } else {
                     addToast(result.error || t("task_run_failed"), "error");
                     setIsDone(true);
@@ -285,20 +293,21 @@ export default function SignTasksPage() {
             }
         } catch (err: any) {
             if (err?.status === 409) {
-                addToast(err.message || (language === "zh" ? "该任务正在执行中，请勿重复触发" : "Task is already running."), "info");
+                const duplicateMessage = err?.data?.message || err?.data?.error || err.message;
+                addToast(duplicateMessage || (language === "zh" ? "该任务正在执行中，请勿重复触发" : "Task is already running."), "info");
                 setRunResult({
                     accepted: false,
                     success: false,
                     output: "",
-                    error: err.message || "",
+                    error: duplicateMessage || "",
                     status: "running",
                     status_text: language === "zh" ? "任务正在执行中" : "Task is running",
-                    message: err.message || "",
+                    message: duplicateMessage || "",
                 });
                 setRunStatus((prev: any) => prev || {
                     status: "running",
                     status_text: language === "zh" ? "任务正在执行中" : "Task is running",
-                    message: err.message || "",
+                    message: duplicateMessage || "",
                     is_running: true,
                 });
             } else {
@@ -427,6 +436,20 @@ export default function SignTasksPage() {
         if (runResult?.success && runLogs.length > 0) return runLogs[runLogs.length - 1];
         return t("logs_waiting");
     })();
+    const runResultMessage = runResult?.message || runResult?.error || "";
+    const isDuplicateRunResult = Boolean(
+        runResult && (
+            runResult.status === "running" ||
+            isDuplicateRunMessage(runResultMessage)
+        )
+    );
+    const isRunFailure = Boolean(
+        runResult && (
+            runResult.status === "failed" ||
+            (runResult.success === false && !isDuplicateRunResult) ||
+            (runResult.accepted === false && !isDuplicateRunResult)
+        )
+    );
 
     if (!token || checking) {
         return null;
@@ -683,8 +706,8 @@ export default function SignTasksPage() {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                                 <div className="rounded-xl border border-white/5 bg-white/5 p-3">
                                     <div className="text-main/40 uppercase tracking-wider mb-1">{t("task_monitor_status")}</div>
-                                    <div className={`font-bold ${runResult && !runResult.success ? "status-text-danger" : isDone ? "status-text-success" : "text-[#b57dff]"}`}>
-                                        {runStatus?.status_text || runStatus?.phase_text || (runResult && !runResult.success ? t("failure") : isDone ? t("success") : t("task_running"))}
+                                    <div className={`font-bold ${isRunFailure ? "status-text-danger" : isDone ? "status-text-success" : "text-[#b57dff]"}`}>
+                                        {runStatus?.status_text || runStatus?.phase_text || (isRunFailure ? t("failure") : isDone ? t("success") : t("task_running"))}
                                     </div>
                                 </div>
                                 <div className="rounded-xl border border-white/5 bg-white/5 p-3">

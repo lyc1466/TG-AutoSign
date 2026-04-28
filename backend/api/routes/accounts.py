@@ -651,6 +651,8 @@ def _extract_legacy_flow_message(item: dict) -> str:
             if not line:
                 continue
             line = re.sub(r"^\[?\d{4}-\d{2}-\d{2}[^\]-]*\]?\s*-?\s*", "", line)
+            if re.search(r"action=<supportaction\.send_(text|dice)\b", line.lower()):
+                continue
             if line:
                 lines.append(line)
 
