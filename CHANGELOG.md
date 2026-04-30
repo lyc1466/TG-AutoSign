@@ -3,6 +3,10 @@
 本文件记录当前维护分支的重要功能、修复、配置、部署与文档变更。
 This file records important feature, fix, configuration, deployment, and documentation changes for the current maintained branch.
 
+## 2026-05-01
+
+- 修复 / Fixed: 任务历史日志的流程明细保留原始等宽排版并支持横向滚动，避免长分隔线和动作列表被强制逐字换行导致显示混乱 / Preserve monospace flow-log formatting in task history and allow horizontal scrolling so long separators and action lists are no longer broken into messy wrapped lines.
+
 ## 2026-04-29
 
 - 修复 / Fixed: 提高右下角 Toast 提示在浅色主题下的清晰度，移除模糊背景叠加并增强错误提示图标、正文和关闭按钮对比度 / Improve bottom-right toast readability in the light theme by removing the blurred translucent background layer and increasing contrast for error icons, text, and the close button.

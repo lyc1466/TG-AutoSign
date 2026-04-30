@@ -1788,13 +1788,13 @@ export default function AccountTasksContent() {
                                                                 {t("logs")}
                                                             </div>
                                                             {log.flow_logs && log.flow_logs.length > 0 ? (
-                                                                <div className="space-y-1">
+                                                                <div className="space-y-1 overflow-x-auto pb-1">
                                                                     {log.flow_logs.map((line, lineIndex) => (
-                                                                        <div key={lineIndex} className="text-main/80 flex gap-2">
-                                                                            <span className="ui-line-number select-none w-6 text-right">
+                                                                        <div key={lineIndex} className="text-main/80 flex gap-2 min-w-max">
+                                                                            <span className="ui-line-number select-none w-6 shrink-0 text-right">
                                                                                 {(lineIndex + 1).toString().padStart(2, "0")}
                                                                             </span>
-                                                                            <span className="break-all">{line}</span>
+                                                                            <span className="whitespace-pre">{line}</span>
                                                                         </div>
                                                                     ))}
                                                                 </div>
