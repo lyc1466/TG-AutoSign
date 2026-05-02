@@ -47,6 +47,7 @@ import {
     UploadSimple,
 } from "@phosphor-icons/react";
 import { ToastContainer, useToast } from "../../../components/ui/toast";
+import { SignTaskFlowLogLine } from "../../../components/SignTaskFlowLogLine";
 import { useLanguage } from "../../../context/LanguageContext";
 
 type ActionTypeOption = "1" | "2" | "3" | "ai_vision" | "ai_logic";
@@ -1790,11 +1791,13 @@ export default function AccountTasksContent() {
                                                             {log.flow_logs && log.flow_logs.length > 0 ? (
                                                                 <div className="space-y-1">
                                                                     {log.flow_logs.map((line, lineIndex) => (
-                                                                        <div key={lineIndex} className="text-main/80 flex gap-2">
-                                                                            <span className="ui-line-number select-none w-6 text-right">
+                                                                        <div key={lineIndex} className="text-main/80 flex gap-2 min-w-0">
+                                                                            <span className="ui-line-number select-none w-6 shrink-0 text-right">
                                                                                 {(lineIndex + 1).toString().padStart(2, "0")}
                                                                             </span>
-                                                                            <span className="break-all">{line}</span>
+                                                                            <span className="min-w-0 flex-1">
+                                                                                <SignTaskFlowLogLine line={line} t={t} />
+                                                                            </span>
                                                                         </div>
                                                                     ))}
                                                                 </div>
