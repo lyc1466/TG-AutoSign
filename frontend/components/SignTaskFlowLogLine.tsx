@@ -4,6 +4,7 @@ type ParsedActionFlowLog = {
     name?: string;
     deleteAfter?: string;
     actions: string[];
+    details: string[];
 };
 
 const normalizeBoxLine = (line: string) => (
@@ -19,7 +20,7 @@ const parseActionFlowLog = (line: string): ParsedActionFlowLog | null => {
 
     const lines = line.split(/\r?\n/);
     const prefix = lines[0]?.trim() || "";
-    const fields: ParsedActionFlowLog = { prefix, actions: [] };
+    const fields: ParsedActionFlowLog = { prefix, actions: [], details: [] };
 
     for (const rawLine of lines.slice(1)) {
         const text = normalizeBoxLine(rawLine);
@@ -47,7 +48,10 @@ const parseActionFlowLog = (line: string): ParsedActionFlowLog | null => {
 
         if (/^\d+\./.test(text)) {
             fields.actions.push(text);
+            continue;
         }
+
+        fields.details.push(text);
     }
 
     if (!fields.chatId && !fields.name && fields.actions.length === 0) {
@@ -57,11 +61,11 @@ const parseActionFlowLog = (line: string): ParsedActionFlowLog | null => {
     return fields;
 };
 
-export function SignTaskFlowLogLine({ line }: { line: string }) {
+export function SignTaskFlowLogLine({ line, t }: { line: string; t: (key: string) => string }) {
     const parsed = parseActionFlowLog(line);
 
     if (!parsed) {
-        return <span className="whitespace-pre-wrap break-words">{line}</span>;
+        return <span className="block overflow-x-auto whitespace-pre py-0.5">{line}</span>;
     }
 
     return (
@@ -74,17 +78,26 @@ export function SignTaskFlowLogLine({ line }: { line: string }) {
                         <span className="font-mono">{parsed.chatId || "-"}</span>
                     </span>
                     <span className="rounded-md bg-white/5 px-2 py-1">
-                        <span className="ui-muted mr-1">Name</span>
+                        <span className="ui-muted mr-1">{t("task_flow_name")}</span>
                         <span>{parsed.name || "-"}</span>
                     </span>
                     <span className="rounded-md bg-white/5 px-2 py-1">
-                        <span className="ui-muted mr-1">Delete After</span>
+                        <span className="ui-muted mr-1">{t("task_flow_delete_after")}</span>
                         <span>{parsed.deleteAfter || "-"}</span>
                     </span>
                 </span>
+                {parsed.details.length > 0 && (
+                    <span className="mt-3 block space-y-1">
+                        {parsed.details.map((detail, index) => (
+                            <span key={`${detail}-${index}`} className="block rounded-md border border-white/8 bg-white/5 px-2 py-1 whitespace-pre-wrap break-words">
+                                {detail}
+                            </span>
+                        ))}
+                    </span>
+                )}
                 {parsed.actions.length > 0 && (
                     <span className="mt-3 block space-y-1">
-                        <span className="block text-[10px] font-bold uppercase tracking-wider ui-muted">Actions Flow</span>
+                        <span className="block text-[10px] font-bold uppercase tracking-wider ui-muted">{t("task_flow_actions")}</span>
                         {parsed.actions.map((action, index) => (
                             <span key={`${action}-${index}`} className="block rounded-md border border-white/8 bg-white/5 px-2 py-1 break-words">
                                 {action}

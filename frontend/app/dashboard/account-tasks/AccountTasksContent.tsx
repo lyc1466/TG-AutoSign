@@ -1796,7 +1796,7 @@ export default function AccountTasksContent() {
                                                                                 {(lineIndex + 1).toString().padStart(2, "0")}
                                                                             </span>
                                                                             <span className="min-w-0 flex-1">
-                                                                                <SignTaskFlowLogLine line={line} />
+                                                                                <SignTaskFlowLogLine line={line} t={t} />
                                                                             </span>
                                                                         </div>
                                                                     ))}

@@ -760,9 +760,11 @@ export default function SignTasksPage() {
                                 ) : (
                                     <div className="space-y-1">
                                         {runLogs.map((log, i) => (
-                                            <div key={i} className="text-main/80 flex gap-2">
-                                                <span className="ui-line-number select-none w-6 text-right">{(i + 1).toString().padStart(2, '0')}</span>
-                                                <span className="break-all">{log}</span>
+                                            <div key={i} className="text-main/80 flex gap-2 min-w-0">
+                                                <span className="ui-line-number select-none w-6 shrink-0 text-right">{(i + 1).toString().padStart(2, '0')}</span>
+                                                <span className="min-w-0 flex-1">
+                                                    <SignTaskFlowLogLine line={log} t={t} />
+                                                </span>
                                             </div>
                                         ))}
                                     </div>
@@ -925,7 +927,7 @@ export default function SignTasksPage() {
                                                                                 {(lineIndex + 1).toString().padStart(2, "0")}
                                                                             </span>
                                                                             <span className="min-w-0 flex-1">
-                                                                                <SignTaskFlowLogLine line={line} />
+                                                                                <SignTaskFlowLogLine line={line} t={t} />
                                                                             </span>
                                                                         </div>
                                                                     ))}
