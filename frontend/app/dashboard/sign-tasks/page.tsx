@@ -36,6 +36,7 @@ import {
 } from "@phosphor-icons/react";
 import { ToastContainer, useToast } from "../../../components/ui/toast";
 import { ThemeLanguageToggle } from "../../../components/ThemeLanguageToggle";
+import { SignTaskFlowLogLine } from "../../../components/SignTaskFlowLogLine";
 import { useLanguage } from "../../../context/LanguageContext";
 
 const truncateSummaryText = (text: string, limit = 200) => {
@@ -917,13 +918,15 @@ export default function SignTasksPage() {
                                                                 {t("logs")}
                                                             </div>
                                                             {log.flow_logs && log.flow_logs.length > 0 ? (
-                                                                <div className="space-y-1 overflow-x-auto pb-1">
+                                                                <div className="space-y-1">
                                                                     {log.flow_logs.map((line, lineIndex) => (
-                                                                        <div key={lineIndex} className="text-main/80 flex gap-2 min-w-max">
+                                                                        <div key={lineIndex} className="text-main/80 flex gap-2 min-w-0">
                                                                             <span className="ui-line-number select-none w-6 shrink-0 text-right">
                                                                                 {(lineIndex + 1).toString().padStart(2, "0")}
                                                                             </span>
-                                                                            <span className="whitespace-pre">{line}</span>
+                                                                            <span className="min-w-0 flex-1">
+                                                                                <SignTaskFlowLogLine line={line} />
+                                                                            </span>
                                                                         </div>
                                                                     ))}
                                                                 </div>

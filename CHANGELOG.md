@@ -5,7 +5,7 @@ This file records important feature, fix, configuration, deployment, and documen
 
 ## 2026-05-01
 
-- 修复 / Fixed: 任务历史日志的流程明细保留原始等宽排版并支持横向滚动，避免长分隔线和动作列表被强制逐字换行导致显示混乱 / Preserve monospace flow-log formatting in task history and allow horizontal scrolling so long separators and action lists are no longer broken into messy wrapped lines.
+- 修复 / Fixed: 任务历史日志会将“开始执行”动作流程框解析为结构化卡片，避免中文、emoji 与框线字符混排导致表格错位 / Render sign-task action-flow banners as structured cards in history logs so Chinese text, emoji, and box-drawing characters no longer misalign.
 
 ## 2026-04-29
 
