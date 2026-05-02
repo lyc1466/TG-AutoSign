@@ -3,6 +3,10 @@
 本文件记录当前维护分支的重要功能、修复、配置、部署与文档变更。
 This file records important feature, fix, configuration, deployment, and documentation changes for the current maintained branch.
 
+## 2026-05-02
+
+- 修复 / Fixed: `ADMIN_USERNAME` 现在会在首次初始化管理员时覆盖默认用户名，并补充 Docker 与 README 说明，明确初始管理员环境变量只在用户表为空时生效 / Honor `ADMIN_USERNAME` when creating the initial administrator and document that initial admin environment variables apply only while the user table is empty.
+
 ## 2026-04-29
 
 - 修复 / Fixed: 提高右下角 Toast 提示在浅色主题下的清晰度，移除模糊背景叠加并增强错误提示图标、正文和关闭按钮对比度 / Improve bottom-right toast readability in the light theme by removing the blurred translucent background layer and increasing contrast for error icons, text, and the close button.

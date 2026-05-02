@@ -7,6 +7,7 @@ from typing import Optional
 
 _SESSION_MODE_FILE = "file"
 _SESSION_MODE_STRING = "string"
+_DEFAULT_ADMIN_USERNAME = "admin"
 _DEFAULT_ADMIN_PASSWORD = "admin123"
 _DEFAULT_SECRET_KEY = "tg-signer-default-secret-key-please-change-in-production-2024"
 _DEFAULT_DATA_DIR_OVERRIDE_FILE = Path.cwd() / ".tg_signpulse_data_dir"
@@ -66,6 +67,7 @@ class TelegramApiRuntimeConfig:
 @dataclass(frozen=True)
 class AuthRuntimeConfig:
     totp_valid_window: int
+    initial_admin_username: str
     initial_admin_password: str
 
 
@@ -159,9 +161,11 @@ def get_telegram_api_runtime_config() -> TelegramApiRuntimeConfig:
 
 def get_auth_runtime_config() -> AuthRuntimeConfig:
     valid_window = _read_positive_int_env("APP_TOTP_VALID_WINDOW", 1, 0)
+    admin_username = _read_str_env("ADMIN_USERNAME") or _DEFAULT_ADMIN_USERNAME
     admin_password = _read_str_env("ADMIN_PASSWORD") or _DEFAULT_ADMIN_PASSWORD
     return AuthRuntimeConfig(
         totp_valid_window=valid_window,
+        initial_admin_username=admin_username,
         initial_admin_password=admin_password,
     )
 

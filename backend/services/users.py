@@ -11,7 +11,9 @@ from backend.models.user import User
 logger = logging.getLogger("backend.users")
 
 
-def ensure_admin(db: Session, username: str = "admin", password: str = None):
+def ensure_admin(
+    db: Session, username: str | None = None, password: str | None = None
+):
     """
     仅在用户表为空时创建一个默认管理员。
     防止用户修改用户名后，系统又自动创建一个默认的 admin 账号。
@@ -21,8 +23,12 @@ def ensure_admin(db: Session, username: str = "admin", password: str = None):
     if first_user:
         return first_user
 
+    auth_config = get_auth_runtime_config()
+    if not username:
+        username = auth_config.initial_admin_username
+
     if not password:
-        env_pwd = get_auth_runtime_config().initial_admin_password
+        env_pwd = auth_config.initial_admin_password
         if env_pwd:
             password = env_pwd
         else:

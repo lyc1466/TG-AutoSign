@@ -54,6 +54,9 @@ services:
       # 登录令牌有效期（小时）
       # - APP_ACCESS_TOKEN_EXPIRE_HOURS=12
 
+      # 初始管理员账号，仅在首次创建用户表为空时生效；用户名不填时默认 admin
+      # - ADMIN_USERNAME=admin
+
       # 初始管理员密码，可选；不填时默认 admin123
       - ADMIN_PASSWORD=change_me
 

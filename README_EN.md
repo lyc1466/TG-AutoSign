@@ -42,6 +42,8 @@ Default admin account:
 - Username: `admin`
 - Password: if `ADMIN_PASSWORD` is not set, the default password is `admin123`
 
+`ADMIN_USERNAME` / `ADMIN_PASSWORD` are used only when the user table is empty and the initial administrator is created. If users already exist or a persisted `/data/db.sqlite` is present, changing the environment variables will not overwrite the existing account; update it in the UI or reinitialize/migrate the data instead.
+
 Change the password immediately after first login.
 
 ### Method 1: Start with a Docker command
@@ -56,6 +58,7 @@ docker run -d \
   -v $(pwd)/data:/data \
   -e TZ=Asia/Shanghai \
   -e APP_SECRET_KEY=your_secret_key \
+  -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD=change_me \
   ghcr.io/lyc1466/tg-autosign:latest
 ```
@@ -209,6 +212,7 @@ The table below follows `.env.example`.
 | `APP_APP_NAME` | `tg-signer-panel` | Panel application name |
 | `APP_SECRET_KEY` | `your_secret_key_here` | Panel secret key; strongly recommended to set |
 | `APP_ACCESS_TOKEN_EXPIRE_HOURS` | `12` | Access token lifetime in hours |
+| `ADMIN_USERNAME` | `admin` (optional) | Initial admin username; only used when the user table is empty |
 | `ADMIN_PASSWORD` | `change_me` (optional) | Initial admin password; defaults to `admin123` if unset |
 | `APP_TOTP_VALID_WINDOW` | `1` (example) | TOTP tolerance window for 2FA |
 
