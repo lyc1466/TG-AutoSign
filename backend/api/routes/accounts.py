@@ -630,7 +630,7 @@ def _incoming_message_summaries(item: dict) -> list[str]:
 def _extract_latest_message(item: dict) -> str:
     summaries = _incoming_message_summaries(item)
     if summaries:
-        return summaries[-1]
+        return summaries[0]
     return _extract_legacy_flow_message(item)
 
 
@@ -691,7 +691,7 @@ def get_account_logs(
     logs = []
     for i, item in enumerate(history[:limit]):
         summaries = _incoming_message_summaries(item)
-        latest_message = summaries[-1] if summaries else _extract_latest_message(item)
+        latest_message = summaries[0] if summaries else _extract_latest_message(item)
         raw_message = item.get("message") or (
             "执行成功" if item.get("success") else "执行失败"
         )

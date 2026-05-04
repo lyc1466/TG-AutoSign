@@ -3,6 +3,11 @@
 本文件记录当前维护分支的重要功能、修复、配置、部署与文档变更。
 This file records important feature, fix, configuration, deployment, and documentation changes for the current maintained branch.
 
+## 2026-05-05
+
+- 修复 / Fixed: 修复右下角 Toast 通知的 CSS 主题选择器错误（`data-theme` 实际设置在 `body` 而非 `:root` 上，导致浅色模式下深色样式错误生效），并移除消息文字上强制覆盖颜色的内联样式，恢复按通知类型区分的主题色文字，确保深浅色主题下文字与背景对比度始终正确 / Fix the toast CSS theme selector bug where the dark-mode style was incorrectly applied in the light theme because `data-theme` lives on `body`, not `:root`; remove the inline color override on toast text so type-specific theme colors are restored and contrast remains correct in both themes.
+- 修复 / Fixed: 账号日志与任务历史中“最新消息”摘要改为取结构化消息事件列表的第一条，与事件入库顺序保持一致 / Use the first structured message event as the "latest message" summary in account logs and task history to match the event insertion order.
+
 ## 2026-05-02
 
 - 修复 / Fixed: `ADMIN_USERNAME` 现在会在首次初始化管理员时覆盖默认用户名，并补充 Docker 与 README 说明，明确初始管理员环境变量只在用户表为空时生效 / Honor `ADMIN_USERNAME` when creating the initial administrator and document that initial admin environment variables apply only while the user table is empty.

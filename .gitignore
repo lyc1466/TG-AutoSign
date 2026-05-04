@@ -139,6 +139,12 @@ bandit_report*.json
 ruff_errors.txt
 git_show_head*.txt
 
+# AI / agent artifacts
+.kimi/
+.playwright-cli/
+CLAUDE.md
+docker-test-data.zip
+
 frontend/node_modules/
 frontend/.next/
 frontend/out/
