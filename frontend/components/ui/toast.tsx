@@ -95,7 +95,7 @@ export function Toast({ message, type = "info", duration = 4000, onClose }: Toas
             <div className="toast-icon p-2 rounded-lg shrink-0">
                 {getIcon()}
             </div>
-            <p className="text-sm font-semibold flex-1 antialiased" style={{ color: "var(--text-main)" }}>{message}</p>
+            <p className="text-sm font-semibold flex-1 antialiased">{message}</p>
             <button
                 aria-label="Close toast"
                 onClick={() => {
