@@ -690,8 +690,8 @@ def get_account_logs(
 
     logs = []
     for i, item in enumerate(history[:limit]):
+        latest_message = _extract_latest_message(item)
         summaries = _incoming_message_summaries(item)
-        latest_message = summaries[0] if summaries else _extract_latest_message(item)
         raw_message = item.get("message") or (
             "执行成功" if item.get("success") else "执行失败"
         )
