@@ -5,6 +5,10 @@ This file records important feature, fix, configuration, deployment, and documen
 
 ## 2026-05-05
 
+- 修复 / Fixed: Dashboard 运行日志移除机器人回复展示，仅保留任务完成状态；文案由"最近 N 条记录"改为"近 3 天记录"；统一 Dashboard、任务列表与账号任务三处历史弹窗的时间与任务名字号，并将时间颜色从 `ui-muted` 调深为 `text-main/70`，提升可读性 / Remove bot-reply display from dashboard run logs and keep only the completion status; change the log summary label from "last N entries" to "last 3 days"; unify timestamp and task-name font sizes across dashboard, sign-tasks, and account-tasks history modals, and deepen timestamp color from `ui-muted` to `text-main/70` for better readability.
+
+## 2026-05-05
+
 - 修复 / Fixed: 修复右下角 Toast 通知的 CSS 主题选择器错误（`data-theme` 实际设置在 `body` 而非 `:root` 上，导致浅色模式下深色样式错误生效），并移除消息文字上强制覆盖颜色的内联样式，恢复按通知类型区分的主题色文字，确保深浅色主题下文字与背景对比度始终正确 / Fix the toast CSS theme selector bug where the dark-mode style was incorrectly applied in the light theme because `data-theme` lives on `body`, not `:root`; remove the inline color override on toast text so type-specific theme colors are restored and contrast remains correct in both themes.
 - 修复 / Fixed: 账号日志与任务历史中“最新消息”摘要改为取结构化消息事件列表的第一条，与事件入库顺序保持一致 / Use the first structured message event as the "latest message" summary in account logs and task history to match the event insertion order.
 

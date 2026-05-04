@@ -865,10 +865,10 @@ export default function SignTasksPage() {
                                         <details key={`${log.time}-${i}`} className="rounded-xl border history-entry-card overflow-hidden" open={i === 0}>
                                             <summary className="flex flex-wrap justify-between items-center gap-3 px-4 py-3 cursor-pointer list-none">
                                                 <div className="min-w-0">
-                                                    <div className="ui-muted text-[10px]">
+                                                    <div className="text-xs text-main/70 font-medium">
                                                         {new Date(log.time).toLocaleString(language === "zh" ? "zh-CN" : "en-US")}
                                                     </div>
-                                                    <div className="text-main/80 break-all mt-1">
+                                                    <div className="text-sm font-semibold text-main/90 break-all mt-1">
                                                         {log.message || t("task_history_no_flow")}
                                                     </div>
                                                 </div>
@@ -896,7 +896,7 @@ export default function SignTasksPage() {
                                                                                     <span className="px-2 py-0.5 rounded-full bg-[#8a3ffc]/15 text-[#c59bff] border border-[#8a3ffc]/20">
                                                                                         {message.typeLabel}
                                                                                     </span>
-                                                                                    <span className="ui-muted">
+                                                                                    <span className="text-main/70">
                                                                                         {event.event_time ? new Date(event.event_time).toLocaleString(language === "zh" ? "zh-CN" : "en-US") : t("no_data")}
                                                                                     </span>
                                                                                 </div>

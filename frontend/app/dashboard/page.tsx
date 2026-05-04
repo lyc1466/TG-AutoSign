@@ -52,39 +52,17 @@ const EMPTY_LOGIN_DATA = {
 };
 const DASHBOARD_STATUS_CHECKED_KEY = "tg-signpulse:dashboard-status-checked";
 const DASHBOARD_STATUS_CACHE_KEY = "tg-signpulse:dashboard-status-cache";
-const GENERIC_ACCOUNT_LOG_MESSAGES = new Set([
-  "Success",
-  "Failed",
-  "执行成功",
-  "执行失败",
-  "任务执行完成",
-  "任务执行失败",
-  "Task completed",
-  "Task failed",
-]);
+const DASHBOARD_LOG_DAYS = 3;
 
-const getAccountLogLatestMessage = (log: AccountLog) =>
-  (log.latest_message || log.bot_message || "").trim();
-
-const normalizeAccountLogMessage = (message: string | undefined, latestMessage: string) => {
-  const trimmed = (message || "").trim();
-  if (!trimmed || GENERIC_ACCOUNT_LOG_MESSAGES.has(trimmed)) return "";
-
-  const receivedMatch = trimmed.match(/^收到\s+(\d+)\s+条(?:回复|消息)(?:，最后一条：.*)?$/);
-  if (receivedMatch) {
-    return `收到 ${receivedMatch[1]} 条消息`;
-  }
-
-  if (latestMessage && trimmed.includes(`最后一条：${latestMessage}`)) {
-    return trimmed.replace(`，最后一条：${latestMessage}`, "").trim();
-  }
-
-  return trimmed;
+const filterLogsLastDays = (logs: AccountLog[], days: number) => {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  return logs.filter((log) => new Date(log.created_at) >= cutoff);
 };
 
 export default function Dashboard() {
   const router = useRouter();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { toasts, addToast, removeToast } = useToast();
   const [token, setLocalToken] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
@@ -950,7 +928,7 @@ export default function Dashboard() {
     setLogsLoading(true);
     try {
       const logs = await getAccountLogs(token, name, 100);
-      setAccountLogs(logs);
+      setAccountLogs(filterLogsLastDays(logs, DASHBOARD_LOG_DAYS));
     } catch (err: any) {
       addToast(formatErrorMessage("logs_fetch_failed", err), "error");
     } finally {
@@ -967,7 +945,7 @@ export default function Dashboard() {
       addToast(t("clear_logs_success"), "success");
       setLogsLoading(true);
       const logs = await getAccountLogs(token, logsAccountName, 100);
-      setAccountLogs(logs);
+      setAccountLogs(filterLogsLastDays(logs, DASHBOARD_LOG_DAYS));
     } catch (err: any) {
       addToast(formatErrorMessage("clear_logs_failed", err), "error");
     } finally {
@@ -1459,9 +1437,7 @@ export default function Dashboard() {
 
             <div className="px-5 py-3 border-b border-white/5 flex justify-between items-center bg-white/2">
               <div className="text-[10px] text-main/30 font-bold uppercase tracking-wider">
-                {t("logs_summary")
-                  .replace("{count}", accountLogs.length.toString())
-                  .replace("{days}", "3")}
+                {t("logs_summary").replace("{days}", String(DASHBOARD_LOG_DAYS))}
               </div>
               {accountLogs.length > 0 && (
                 <button
@@ -1485,35 +1461,19 @@ export default function Dashboard() {
                 <div className="text-center py-20 text-main/20 font-sans">{t("no_logs")}</div>
               ) : (
                 <div className="space-y-3">
-                  {accountLogs.map((log, i) => {
-                    const latestMessage = getAccountLogLatestMessage(log);
-                    const detailMessage = normalizeAccountLogMessage(log.message, latestMessage);
-
-                    return (
-                      <div key={i} className="p-4 rounded-xl bg-white/2 border border-white/5 group hover:border-white/10 transition-colors">
-                        <div className="flex justify-between items-center mb-2.5 text-[10px] uppercase tracking-wider font-bold">
-                          <span className="ui-muted">{new Date(log.created_at).toLocaleString()}</span>
-                          <span className={`px-2 py-0.5 rounded-md border ${log.success ? 'status-badge-success' : 'status-badge-danger'}`}>
-                            {log.success ? t("success") : t("failure")}
-                          </span>
-                        </div>
-                        <div className="text-main/80 font-semibold mb-2">
-                          {`${t("task_label")}：${log.task_name}${log.success ? t("task_exec_success") : t("task_exec_failed")}`}
-                        </div>
-                        {detailMessage ? (
-                          <div className="dashboard-log-message whitespace-pre-wrap break-words overflow-x-auto max-h-[120px] scrollbar-none mb-2">
-                            {detailMessage}
-                          </div>
-                        ) : null}
-                        {latestMessage ? (
-                          <div className="dashboard-log-message whitespace-pre-wrap break-words">
-                            <span className="dashboard-log-label">{t("bot_reply")}：</span>
-                            {latestMessage}
-                          </div>
-                        ) : null}
+                  {accountLogs.map((log, i) => (
+                    <div key={i} className="p-4 rounded-xl bg-white/2 border border-white/5 group hover:border-white/10 transition-colors">
+                      <div className="flex justify-between items-center mb-2.5">
+                        <span className="text-sm text-main/70 font-medium">{new Date(log.created_at).toLocaleString(language === "zh" ? "zh-CN" : "en-US")}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${log.success ? 'status-badge-success' : 'status-badge-danger'}`}>
+                          {log.success ? t("success") : t("failure")}
+                        </span>
                       </div>
-                    );
-                  })}
+                      <div className="text-sm font-semibold text-main/90">
+                        {`${t("task_label")}：${log.task_name}${log.success ? t("task_exec_success") : t("task_exec_failed")}`}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
