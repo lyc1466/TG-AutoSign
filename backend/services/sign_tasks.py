@@ -707,7 +707,7 @@ class SignTaskService:
                         with open(config_file, "w", encoding="utf-8") as f:
                             json.dump(config, f, ensure_ascii=False, indent=2)
                     except Exception as e:
-                        print(f"DEBUG: 更新任务配置 last_run 失败: {e}")
+                        logger.error("更新任务配置 last_run 失败: 任务=%s, 账号=%s, 错误=%s", task_name, account_name, e)
 
             # 2. 更新内存缓存 (关键优化：避免置空 self._tasks_cache)
             if self._tasks_cache is not None:
@@ -717,7 +717,7 @@ class SignTaskService:
                         break
 
         except Exception as e:
-            print(f"DEBUG: 保存运行信息失败: {str(e)}")
+            logger.error("保存运行信息失败: 任务=%s, 账号=%s, 文件=%s, 错误=%s", task_name, account_name, history_file, e)
 
     def _append_scheduler_log(self, filename: str, message: str) -> None:
         try:
@@ -1746,12 +1746,14 @@ class SignTaskService:
             }
             if duration_seconds is not None:
                 cleanup_metadata["duration_seconds"] = duration_seconds
+            # 先保存历史，确保原始错误被持久化
+            save_error = None
             try:
                 await _maybe_report_progress(
                     progress_callback,
                     "cleanup",
                     "收尾处理中",
-                    "正在保存历史并发送完成通知",
+                    "正在保存历史",
                 )
                 self._save_run_info(
                     task_name,
@@ -1761,6 +1763,24 @@ class SignTaskService:
                     flow_logs=final_logs,
                     message_events=final_message_events,
                     run_metadata=cleanup_metadata,
+                )
+            except Exception as save_exc:
+                save_error = save_exc
+                logger.error(
+                    "保存任务历史失败: 账号=%s, 任务=%s, 错误=%s",
+                    account_name,
+                    task_name,
+                    save_exc,
+                )
+
+            # 再发送通知，失败不影响已保存的历史
+            notify_error = None
+            try:
+                await _maybe_report_progress(
+                    progress_callback,
+                    "cleanup",
+                    "收尾处理中",
+                    "正在发送完成通知",
                 )
                 dispatch_notification(
                     get_notification_service().send_sign_task_completion(
@@ -1778,10 +1798,23 @@ class SignTaskService:
                         f"for account={account_name}, task={task_name}"
                     ),
                 )
-            except Exception as cleanup_exc:
-                success = False
-                error_msg = f"收尾动作失败: {cleanup_exc}"
-                self._active_logs[task_key].append(_timestamped_log(error_msg))
+            except Exception as notify_exc:
+                notify_error = notify_exc
+                logger.error(
+                    "发送任务完成通知失败: 账号=%s, 任务=%s, 错误=%s",
+                    account_name,
+                    task_name,
+                    notify_exc,
+                )
+
+            # 根据原始执行结果和收尾阶段错误，向调用者报告最终状态
+            if not success:
+                final_error_parts = [error_msg] if error_msg else []
+                if save_error:
+                    final_error_parts.append(f"保存历史失败: {save_error}")
+                if notify_error:
+                    final_error_parts.append(f"发送通知失败: {notify_error}")
+                error_msg = "; ".join(final_error_parts)
                 output_str = "\n".join(self._active_logs.get(task_key, []))
                 await _maybe_report_progress(
                     progress_callback,
@@ -1790,7 +1823,19 @@ class SignTaskService:
                     error_msg,
                 )
             else:
-                if success:
+                if save_error or notify_error:
+                    final_msg_parts = ["任务已完成"]
+                    if save_error:
+                        final_msg_parts.append(f"保存历史失败: {save_error}")
+                    if notify_error:
+                        final_msg_parts.append(f"发送通知失败: {notify_error}")
+                    await _maybe_report_progress(
+                        progress_callback,
+                        "completed",
+                        "任务已完成",
+                        "; ".join(final_msg_parts),
+                    )
+                else:
                     await _maybe_report_progress(
                         progress_callback,
                         "completed",

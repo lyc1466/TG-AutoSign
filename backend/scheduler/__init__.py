@@ -56,8 +56,26 @@ async def _job_run_task(task_id: int) -> None:
             return
         # run_task_once 将被改为 async
         logger.info("开始执行普通任务调度: 任务 ID=%s, 任务名=%s", task_id, task.name)
-        await run_task_once(db, task)
-        logger.info("普通任务调度执行结束: 任务 ID=%s, 任务名=%s", task_id, task.name)
+        task_log = await run_task_once(db, task)
+        if task_log and task_log.status == "success":
+            logger.info("普通任务调度执行成功: 任务 ID=%s, 任务名=%s", task_id, task.name)
+        else:
+            error_detail = task_log.output if task_log and task_log.output else "未知错误"
+            logger.error(
+                "普通任务调度执行失败: 任务 ID=%s, 任务名=%s, 错误=%s",
+                task_id,
+                task.name,
+                error_detail,
+            )
+    except Exception as e:
+        # task 可能在 db.query() 阶段就抛异常而未绑定，需用 locals() 检查避免 NameError
+        task_name = task.name if "task" in locals() and task else "未知任务"
+        logger.exception(
+            "普通任务调度执行异常: 任务 ID=%s, 任务名=%s, 错误=%s",
+            task_id,
+            task_name,
+            describe_exception(e),
+        )
     finally:
         db.close()
 

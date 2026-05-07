@@ -3,6 +3,12 @@
 本文件记录当前维护分支的重要功能、修复、配置、部署与文档变更。
 This file records important feature, fix, configuration, deployment, and documentation changes for the current maintained branch.
 
+## 2026-05-07
+
+- 修复 / Fixed: 普通任务调度器在执行失败时不再只输出 `INFO` 级别的"执行结束"日志，而是正确输出 `ERROR` 并携带错误详情；同时增加异常边界捕获，防止逃逸异常丢失在 APScheduler 层 / Log regular task scheduling failures at `ERROR` level with error details instead of a generic `INFO` completion message, and add an outer exception boundary so escaped errors are also captured.
+- 修复 / Fixed: 签到任务 `_save_run_info` 中的调试 `print` 替换为 `logger.error`，确保保存历史文件或更新 `config.json` 失败时错误信息能写入 `app.log` / `error.log` 而不是仅输出到 stdout / Replace debug `print` statements in `_save_run_info` with `logger.error` so file I/O failures are persisted to the application log files rather than lost to stdout.
+- 修复 / Fixed: 签到任务 `run_task_with_logs` 收尾阶段将 `_save_run_info` 与 `dispatch_notification` 的异常处理分离，确保保存失败不影响通知发送，通知失败也不覆盖已保存的历史记录，原始错误信息始终保留并返回给调用者 / Separate exception handling in the sign task cleanup phase so history-save failures do not block notification delivery, notification failures do not overwrite persisted history, and the original error is always preserved.
+
 ## 2026-05-05
 
 - 修复 / Fixed: Dashboard 运行日志移除机器人回复展示，仅保留任务完成状态；文案由"最近 N 条记录"改为"近 3 天记录"；统一 Dashboard、任务列表与账号任务三处历史弹窗的时间与任务名字号，并将时间颜色从 `ui-muted` 调深为 `text-main/70`，提升可读性 / Remove bot-reply display from dashboard run logs and keep only the completion status; change the log summary label from "last N entries" to "last 3 days"; unify timestamp and task-name font sizes across dashboard, sign-tasks, and account-tasks history modals, and deepen timestamp color from `ui-muted` to `text-main/70` for better readability.
