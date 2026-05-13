@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.core.config import get_settings
+from backend.core.logging import describe_exception
 from backend.core.runtime_config import (
     get_sign_task_runtime_config,
     get_telegram_api_runtime_config,
@@ -1798,22 +1799,27 @@ class SignTaskService:
                         f"for account={account_name}, task={task_name}"
                     ),
                 )
+            # dispatch_notification 内部已通过 done_callback 捕获异常，此处仅作兜底防御
             except Exception as notify_exc:
                 notify_error = notify_exc
                 logger.error(
                     "发送任务完成通知失败: 账号=%s, 任务=%s, 错误=%s",
                     account_name,
                     task_name,
-                    notify_exc,
+                    describe_exception(notify_exc),
                 )
 
             # 根据原始执行结果和收尾阶段错误，向调用者报告最终状态
             if not success:
                 final_error_parts = [error_msg] if error_msg else []
                 if save_error:
-                    final_error_parts.append(f"保存历史失败: {save_error}")
+                    final_error_parts.append(
+                        f"保存历史失败: {describe_exception(save_error)}"
+                    )
                 if notify_error:
-                    final_error_parts.append(f"发送通知失败: {notify_error}")
+                    final_error_parts.append(
+                        f"发送通知失败: {describe_exception(notify_error)}"
+                    )
                 error_msg = "; ".join(final_error_parts)
                 output_str = "\n".join(self._active_logs.get(task_key, []))
                 await _maybe_report_progress(
@@ -1826,9 +1832,13 @@ class SignTaskService:
                 if save_error or notify_error:
                     final_msg_parts = ["任务已完成"]
                     if save_error:
-                        final_msg_parts.append(f"保存历史失败: {save_error}")
+                        final_msg_parts.append(
+                            f"保存历史失败: {describe_exception(save_error)}"
+                        )
                     if notify_error:
-                        final_msg_parts.append(f"发送通知失败: {notify_error}")
+                        final_msg_parts.append(
+                            f"发送通知失败: {describe_exception(notify_error)}"
+                        )
                     await _maybe_report_progress(
                         progress_callback,
                         "completed",
